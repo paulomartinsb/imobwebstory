@@ -14,7 +14,7 @@ import { LoginPage } from './pages/LoginPage';
 import { ReferralPage } from './pages/ReferralPage';
 
 // Route Guard Component (v6 Style)
-const RequireAuth = ({ children }: { children: React.ReactNode }) => {
+const RequireAuth = ({ children }: { children?: React.ReactNode }) => {
     const { currentUser } = useStore();
     const location = useLocation();
 
@@ -26,7 +26,7 @@ const RequireAuth = ({ children }: { children: React.ReactNode }) => {
 };
 
 // Public Route Guard (v6 Style)
-const PublicRoute = ({ children }: { children: React.ReactNode }) => {
+const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
     const { currentUser } = useStore();
     if (currentUser) {
         return <Navigate to="/" replace />;

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, Button, Input } from '../components/ui/Elements';
 import { User, Bell, Shield, Smartphone, Users, Lock, Key, Camera } from 'lucide-react';
 import { useStore } from '../store';
@@ -8,13 +8,46 @@ export const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Local state for profile to prevent auto-save
+  const [profileForm, setProfileForm] = useState({
+      name: '',
+      email: ''
+  });
+
+  // Initialize form when currentUser loads or changes (e.g. login)
+  // We use currentUser?.id dependency to avoid resetting form while typing if background sync happens
+  useEffect(() => {
+      if (currentUser) {
+          setProfileForm({
+              name: currentUser.name || '',
+              email: currentUser.email || ''
+          });
+      }
+  }, [currentUser?.id]); 
+
   // Security Form State
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  const handleSave = () => {
-      addNotification('success', 'Configurações salvas com sucesso!');
+  const handleSaveProfile = () => {
+      if (currentUser) {
+          if (!profileForm.name.trim() || !profileForm.email.trim()) {
+              addNotification('error', 'Nome e Email são obrigatórios.');
+              return;
+          }
+          
+          // Call updateUser which handles Supabase sync via store logic
+          updateUser(currentUser.id, {
+              name: profileForm.name,
+              email: profileForm.email
+          });
+          // Notification is handled by the store action
+      }
+  }
+
+  const handleSavePreferences = () => {
+      addNotification('success', 'Preferências salvas com sucesso!');
   }
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -30,8 +63,6 @@ export const SettingsPage: React.FC = () => {
           reader.onloadend = () => {
               if (typeof reader.result === 'string') {
                   updateUser(currentUser.id, { avatar: reader.result });
-                  // Store notification handles success message automatically via updateUser, 
-                  // but we can add a specific one if needed, though updateUser logic covers it.
               }
           };
           reader.readAsDataURL(file);
@@ -139,14 +170,22 @@ export const SettingsPage: React.FC = () => {
                     <Card className="p-6 animate-in fade-in slide-in-from-right-4 duration-300">
                         <h3 className="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100">Informações Pessoais</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                            <Input label="Nome Completo" defaultValue={currentUser?.name} onChange={(e) => { if(currentUser) updateUser(currentUser.id, { name: e.target.value }) }} />
-                            <Input label="E-mail" defaultValue={currentUser?.email} onChange={(e) => { if(currentUser) updateUser(currentUser.id, { email: e.target.value }) }} />
+                            <Input 
+                                label="Nome Completo" 
+                                value={profileForm.name} 
+                                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} 
+                            />
+                            <Input 
+                                label="E-mail" 
+                                value={profileForm.email} 
+                                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} 
+                            />
                             <Input label="Telefone" defaultValue="(11) 99999-9999" disabled />
                             <Input label="Função" defaultValue={currentUser?.role} disabled className="bg-slate-50 capitalize" />
                         </div>
                         <div className="flex justify-end gap-3">
-                            <Button variant="outline">Cancelar</Button>
-                            <Button onClick={handleSave}>Salvar Alterações</Button>
+                            <Button variant="outline" onClick={() => setProfileForm({ name: currentUser?.name || '', email: currentUser?.email || '' })}>Cancelar</Button>
+                            <Button onClick={handleSaveProfile}>Salvar Alterações</Button>
                         </div>
                     </Card>
                 )}
@@ -190,7 +229,7 @@ export const SettingsPage: React.FC = () => {
                         </div>
                         <div className="flex justify-end gap-3">
                             <Button variant="outline">Cancelar</Button>
-                            <Button onClick={handleSave}>Salvar Preferências</Button>
+                            <Button onClick={handleSavePreferences}>Salvar Preferências</Button>
                         </div>
                     </Card>
                 )}
