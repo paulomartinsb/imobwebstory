@@ -87,7 +87,7 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             <div className="w-8 h-8 bg-gradient-to-br from-primary-400 to-primary-600 rounded-lg flex items-center justify-center">
               <Building2 className="text-white" size={20} />
             </div>
-            <h1 className="text-xl font-bold tracking-tight">GoldImob<span className="text-primary-400">.ai</span></h1>
+            <h1 className="text-xl font-bold tracking-tight">WebImob</h1>
           </div>
           <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-slate-400 hover:text-white">
             <X size={24} />

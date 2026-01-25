@@ -303,18 +303,6 @@ export const PropertiesPage: React.FC = () => {
       }));
   };
 
-  const handleAddRandomImage = () => {
-      if ((formData.images?.length || 0) >= 10) {
-          addNotification('error', 'Limite de 10 fotos atingido.');
-          return;
-      }
-      const randomUrl = `https://picsum.photos/800/600?random=${Math.random()}`;
-      setFormData(prev => ({
-          ...prev,
-          images: [...(prev.images || []), randomUrl]
-      }));
-  };
-
   // --- Drag and Drop Handlers ---
   const handleDragStart = (index: number) => {
       setDraggedImageIndex(index);
@@ -420,10 +408,10 @@ export const PropertiesPage: React.FC = () => {
     const compPart = formData.complement ? ` - ${formData.complement}` : '';
     const fullAddress = `${formData.street}${numPart}${compPart} - ${formData.neighborhood}, ${formData.city} - ${formData.state}`;
 
-    // Ensure at least one image or placeholder
+    // Ensure at least one image or placeholder (Static placeholder now)
     let finalImages = formData.images || [];
     if(finalImages.length === 0) {
-        finalImages = [`https://picsum.photos/800/600?random=${Math.random()}`];
+        finalImages = ['https://via.placeholder.com/800x600?text=Sem+Imagem'];
     }
 
     const submissionData = { ...formData, address: fullAddress, images: finalImages };
@@ -862,14 +850,6 @@ export const PropertiesPage: React.FC = () => {
                                 Upload Fotos (Local)
                                 <input type="file" multiple accept="image/*" onChange={handleImageUpload} className="hidden" disabled={(formData.images?.length || 0) >= 10} />
                             </label>
-                            <button 
-                                type="button" 
-                                onClick={handleAddRandomImage}
-                                className={`px-4 py-2 border border-slate-200 rounded-lg text-sm hover:bg-slate-50 ${(formData.images?.length || 0) >= 10 ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                disabled={(formData.images?.length || 0) >= 10}
-                            >
-                                + URL Aleatória
-                            </button>
                         </div>
 
                         {formData.images && formData.images.length > 0 && (

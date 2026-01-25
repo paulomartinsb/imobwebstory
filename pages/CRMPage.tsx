@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Badge, Button, Input, PhoneInput, formatPhone } from '../components/ui/Elements';
 import { Client, PipelineStageConfig, PropertyType, LeadSource, Property, Visit, DetailedInterestProfile } from '../types';
-import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, DollarSign, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle } from 'lucide-react';
+import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, DollarSign, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock } from 'lucide-react';
 import { calculateClientMatch, generatePipelineInsights, generateLeadCommercialInsights, findBestMatch } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
@@ -462,6 +462,8 @@ export const CRMPage: React.FC = () => {
   const [isCepLoading, setIsCepLoading] = useState(false);
   const [foundClient, setFoundClient] = useState<Client | null>(null);
 
+  // Visit Scheduling inside "New Lead"
+  const [scheduleVisitNow, setScheduleVisitNow] = useState(false);
   const [newVisitDate, setNewVisitDate] = useState('');
   const [newVisitPropertyCode, setNewVisitPropertyCode] = useState('');
   const [newVisitNotes, setNewVisitNotes] = useState('');
@@ -469,6 +471,9 @@ export const CRMPage: React.FC = () => {
 
   const [linkSearchCode, setLinkSearchCode] = useState('');
   const [linkMatchingProperties, setLinkMatchingProperties] = useState<Property[]>([]);
+
+  // Tab state for New Lead Modal
+  const [activeLeadTab, setActiveLeadTab] = useState<'info' | 'profile' | 'visit'>('info');
 
   const initialFormState = {
       name: '', email: '', phone: '', source: 'Manual / Balcão' as LeadSource, ownerId: '',
@@ -667,7 +672,8 @@ export const CRMPage: React.FC = () => {
         addNotification('success', 'Lead atualizado.');
     } else {
         const defaultPipeline = pipelines[0];
-        addClient({
+        // Create Client and Get ID
+        const newClientId = addClient({
             ...payload,
             pipelineId: currentPipelineId || defaultPipeline?.id,
             stage: defaultPipeline?.stages[0]?.id || 'new',
@@ -676,16 +682,38 @@ export const CRMPage: React.FC = () => {
             documents: [],
             followers: []
         });
+
+        // Handle Immediate Visit Scheduling
+        if (newClientId && scheduleVisitNow && newVisitDate && newVisitPropertyCode) {
+            const property = properties.find(p => p.code === newVisitPropertyCode);
+            if (property) {
+                addVisit(newClientId, {
+                    date: newVisitDate,
+                    propertyId: property.id,
+                    status: 'scheduled',
+                    notes: newVisitNotes || 'Visita inaugural agendada na criação do lead.'
+                });
+                addNotification('success', 'Visita agendada com sucesso!');
+            }
+        }
     }
+    
     setAddLeadOpen(false);
     setEditLeadOpen(false);
     setEditingClientId(null);
     setFormData(initialFormState);
+    // Reset Visit Data
+    setScheduleVisitNow(false);
+    setNewVisitDate('');
+    setNewVisitPropertyCode('');
+    setNewVisitNotes('');
   };
 
   const handleQuickAdd = () => {
     setEditingClientId(null);
     setFormData(initialFormState);
+    setScheduleVisitNow(false);
+    setActiveLeadTab('info');
     setAddLeadOpen(true);
   };
 
@@ -696,6 +724,15 @@ export const CRMPage: React.FC = () => {
   const onRescheduleVisit = (client: Client, visit: Visit) => {
       setReschedulingVisit({client, visit});
       setRescheduleData({ date: visit.date.substring(0, 16), notes: visit.notes || '' });
+  }
+
+  // Helper for adding locations
+  const [newLocation, setNewLocation] = useState('');
+  const addLocation = () => {
+      if (newLocation.trim()) {
+          toggleProfileList('neighborhoods', newLocation.trim());
+          setNewLocation('');
+      }
   }
 
   return (
@@ -739,16 +776,235 @@ export const CRMPage: React.FC = () => {
             </div>
         </div>
 
-        {/* Modals placeholders - Implementing fully would require reusing the components from original file which I don't have full source of in memory, but providing empty/minimal implementations for the missing parts to ensure compilation */}
-        {addLeadOpen && (
-             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
-                 <div className="bg-white p-6 rounded-lg">
-                     <h2 className="text-lg font-bold mb-4">Novo Lead</h2>
-                     <form onSubmit={handleSubmit}>
-                         <Input label="Nome" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-                         <Button type="submit" className="mt-4">Salvar</Button>
-                         <Button type="button" variant="outline" onClick={() => setAddLeadOpen(false)} className="ml-2">Cancelar</Button>
+        {/* --- FULL FEATURED LEAD MODAL --- */}
+        {(addLeadOpen || editLeadOpen) && (
+             <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                 <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+                     {/* Modal Header */}
+                     <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
+                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                             <UserPlus size={22} className="text-primary-600"/>
+                             {editingClientId ? 'Editar Lead' : 'Cadastrar Lead'}
+                         </h2>
+                         <button onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }} className="text-slate-400 hover:text-slate-600">
+                             <X size={24} />
+                         </button>
+                     </div>
+
+                     {/* Tabs */}
+                     <div className="flex border-b border-slate-100 px-6">
+                         <button onClick={() => setActiveLeadTab('info')} className={`pb-3 pt-3 text-sm font-semibold border-b-2 transition-colors mr-6 ${activeLeadTab === 'info' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500'}`}>
+                             Dados Básicos
+                         </button>
+                         <button onClick={() => setActiveLeadTab('profile')} className={`pb-3 pt-3 text-sm font-semibold border-b-2 transition-colors mr-6 ${activeLeadTab === 'profile' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500'}`}>
+                             Perfil de Interesse
+                         </button>
+                         {!editingClientId && (
+                             <button onClick={() => setActiveLeadTab('visit')} className={`pb-3 pt-3 text-sm font-semibold border-b-2 transition-colors ${activeLeadTab === 'visit' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500'}`}>
+                                 Agendar Visita
+                             </button>
+                         )}
+                     </div>
+
+                     <form onSubmit={handleSubmit} className="flex-1 p-6 space-y-6 overflow-y-auto">
+                         
+                         {/* TAB 1: BASIC INFO */}
+                         {activeLeadTab === 'info' && (
+                             <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+                                 <Input label="Nome Completo" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Ex: João da Silva" />
+                                 
+                                 <div className="grid grid-cols-2 gap-4">
+                                     <PhoneInput label="Telefone / WhatsApp" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                                     <Input label="Email" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="joao@email.com" />
+                                 </div>
+
+                                 <div>
+                                     <label className="text-sm font-medium text-slate-700 block mb-1">Origem do Lead</label>
+                                     <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as LeadSource})}>
+                                         {systemSettings.leadSources.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                                     </select>
+                                 </div>
+
+                                 {/* Only show owner select for Staff */}
+                                 {isStaff && (
+                                     <div>
+                                         <label className="text-sm font-medium text-slate-700 block mb-1">Responsável (Corretor)</label>
+                                         <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.ownerId} onChange={e => setFormData({...formData, ownerId: e.target.value})}>
+                                             <option value="">-- Selecione --</option>
+                                             {users.filter(u => u.role === 'broker').map(u => (
+                                                 <option key={u.id} value={u.id}>{u.name}</option>
+                                             ))}
+                                         </select>
+                                     </div>
+                                 )}
+                             </div>
+                         )}
+
+                         {/* TAB 2: INTEREST PROFILE */}
+                         {activeLeadTab === 'profile' && (
+                             <div className="space-y-5 animate-in fade-in slide-in-from-right-4">
+                                 <div className="grid grid-cols-2 gap-4">
+                                     <Input label="Orçamento Máximo (R$)" type="number" value={formData.interestProfile.maxPrice} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, maxPrice: Number(e.target.value) } })} />
+                                     <div>
+                                         <label className="text-sm font-medium text-slate-700 block mb-1">Finalidade</label>
+                                         <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.interestProfile.usage} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, usage: e.target.value as any } })}>
+                                             <option value="moradia">Moradia</option>
+                                             <option value="investimento">Investimento</option>
+                                         </select>
+                                     </div>
+                                 </div>
+
+                                 <div>
+                                     <label className="text-sm font-medium text-slate-700 block mb-2">Tipo de Imóvel</label>
+                                     <div className="flex flex-wrap gap-2">
+                                         {systemSettings.propertyTypes.map(t => (
+                                             <button type="button" key={t.value} onClick={() => toggleProfileList('propertyTypes', t.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.interestProfile.propertyTypes.includes(t.value) ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                                 {t.label}
+                                             </button>
+                                         ))}
+                                     </div>
+                                 </div>
+
+                                 <div>
+                                     <label className="text-sm font-medium text-slate-700 block mb-2">Localização (Bairros/Cidades)</label>
+                                     <div className="flex gap-2 mb-2">
+                                         <input type="text" className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg" placeholder="Ex: Jardins" value={newLocation} onChange={e => setNewLocation(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); addLocation(); }}} />
+                                         <Button type="button" onClick={addLocation} variant="secondary" className="px-3"><Plus size={16}/></Button>
+                                     </div>
+                                     <div className="flex flex-wrap gap-2">
+                                         {formData.interestProfile.neighborhoods.map((loc, i) => (
+                                             <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded text-xs flex items-center gap-1">
+                                                 {loc} <button type="button" onClick={() => toggleProfileList('neighborhoods', loc)}><X size={12}/></button>
+                                             </span>
+                                         ))}
+                                     </div>
+                                 </div>
+
+                                 <div className="grid grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                     <div className="col-span-1"><Input label="Min Quartos" type="number" className="bg-white" value={formData.interestProfile.minBedrooms} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minBedrooms: Number(e.target.value) } })} /></div>
+                                     <div className="col-span-1"><Input label="Min Suítes" type="number" className="bg-white" value={formData.interestProfile.minSuites} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minSuites: Number(e.target.value) } })} /></div>
+                                     <div className="col-span-1"><Input label="Min Vagas" type="number" className="bg-white" value={formData.interestProfile.minParking} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minParking: Number(e.target.value) } })} /></div>
+                                     <div className="col-span-1"><Input label="Min Área (m²)" type="number" className="bg-white" value={formData.interestProfile.minArea} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minArea: Number(e.target.value) } })} /></div>
+                                 </div>
+
+                                 <div>
+                                     <label className="text-sm font-medium text-slate-700 block mb-2">Diferenciais Buscados</label>
+                                     <div className="flex flex-wrap gap-2">
+                                         {systemSettings.propertyFeatures.map(f => (
+                                             <button type="button" key={f} onClick={() => toggleProfileList('mustHaveFeatures', f)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.interestProfile.mustHaveFeatures.includes(f) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                                 {f}
+                                             </button>
+                                         ))}
+                                     </div>
+                                 </div>
+
+                                 <div>
+                                     <label className="text-sm font-medium text-slate-700 block mb-1">Observações Gerais</label>
+                                     <textarea className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20" placeholder="Ex: Cliente tem pressa, prefere andar alto..." value={formData.interestProfile.notes} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, notes: e.target.value } })} />
+                                 </div>
+                             </div>
+                         )}
+
+                         {/* TAB 3: SCHEDULE VISIT (Only for New Leads) */}
+                         {!editingClientId && activeLeadTab === 'visit' && (
+                             <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+                                 <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-3">
+                                     <CalendarPlus className="text-blue-600 shrink-0 mt-1" size={20} />
+                                     <div>
+                                         <h4 className="font-semibold text-blue-800 text-sm">Agendamento Rápido</h4>
+                                         <p className="text-xs text-blue-700 mt-1">
+                                             Selecione esta opção para criar o lead já com uma visita agendada na agenda.
+                                         </p>
+                                     </div>
+                                     <label className="relative inline-flex items-center cursor-pointer ml-auto mt-1">
+                                         <input type="checkbox" className="sr-only peer" checked={scheduleVisitNow} onChange={(e) => setScheduleVisitNow(e.target.checked)} />
+                                         <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                     </label>
+                                 </div>
+
+                                 {scheduleVisitNow && (
+                                     <div className="space-y-4 pl-4 border-l-2 border-blue-100">
+                                         <div className="grid grid-cols-2 gap-4">
+                                             <div>
+                                                 <label className="text-sm font-medium text-slate-700 block mb-1">Data e Hora</label>
+                                                 <input 
+                                                     type="datetime-local" 
+                                                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                                     value={newVisitDate}
+                                                     onChange={e => setNewVisitDate(e.target.value)}
+                                                 />
+                                             </div>
+                                             
+                                             <div className="relative">
+                                                 <label className="text-sm font-medium text-slate-700 block mb-1">Imóvel (Código ou Nome)</label>
+                                                 <div className="relative">
+                                                     <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
+                                                     <input 
+                                                         type="text" 
+                                                         className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                                         placeholder="Buscar imóvel..."
+                                                         value={newVisitPropertyCode}
+                                                         onChange={handlePropertySearchChange}
+                                                     />
+                                                 </div>
+                                                 {/* Dropdown Results */}
+                                                 {matchingProperties.length > 0 && (
+                                                     <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg shadow-lg mt-1 max-h-40 overflow-y-auto">
+                                                         {matchingProperties.map(p => (
+                                                             <button 
+                                                                 key={p.id}
+                                                                 type="button"
+                                                                 className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex flex-col border-b border-slate-50"
+                                                                 onClick={() => handlePropertySelect(p)}
+                                                             >
+                                                                 <span className="font-semibold text-slate-800">{p.code} - {p.title}</span>
+                                                                 <span className="text-xs text-slate-500">{p.address}</span>
+                                                             </button>
+                                                         ))}
+                                                     </div>
+                                                 )}
+                                             </div>
+                                         </div>
+                                         
+                                         <div>
+                                             <label className="text-sm font-medium text-slate-700 block mb-1">Observações da Visita</label>
+                                             <textarea 
+                                                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20"
+                                                 placeholder="Instruções de acesso, chaves, etc."
+                                                 value={newVisitNotes}
+                                                 onChange={e => setNewVisitNotes(e.target.value)}
+                                             />
+                                         </div>
+                                     </div>
+                                 )}
+                             </div>
+                         )}
                      </form>
+
+                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+                         <div className="text-xs text-slate-500 italic">
+                             {activeLeadTab === 'info' ? 'Próximo: Perfil de Interesse' : activeLeadTab === 'profile' && !editingClientId ? 'Próximo: Agendar Visita' : ''}
+                         </div>
+                         <div className="flex gap-2">
+                             <Button type="button" variant="outline" onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }}>Cancelar</Button>
+                             {/* Navigation Buttons or Submit */}
+                             {activeLeadTab !== 'visit' && !editingClientId ? (
+                                 <Button type="button" onClick={() => setActiveLeadTab(activeLeadTab === 'info' ? 'profile' : 'visit')}>
+                                     Próximo <ArrowRight size={16} />
+                                 </Button>
+                             ) : (
+                                 <Button onClick={handleSubmit} className="gap-2">
+                                     <Save size={18} /> {editingClientId ? 'Salvar Alterações' : 'Cadastrar Lead'}
+                                 </Button>
+                             )}
+                             {/* Allow direct save from profile if editing */}
+                             {editingClientId && (
+                                 <Button onClick={handleSubmit} className="gap-2">
+                                     <Save size={18} /> Salvar Alterações
+                                 </Button>
+                             )}
+                         </div>
+                     </div>
                  </div>
              </div>
         )}

@@ -319,7 +319,7 @@ export const AdminPage: React.FC = () => {
   const copySqlSchema = () => {
       // PREPARE DEFAULT SETTINGS JSON FOR SEEDING
       const defaultSettingsJson = JSON.stringify({
-          companyName: 'GoldImob AI',
+          companyName: 'WebImob',
           allowNewRegistrations: true,
           requirePropertyApproval: true,
           maintenanceMode: false,
@@ -341,7 +341,7 @@ export const AdminPage: React.FC = () => {
       });
 
       const sql = `
--- TABELAS DO SISTEMA GOLDIMOB AI
+-- TABELAS DO SISTEMA WEBIMOB
 -- Execute este script no SQL Editor do Supabase para criar a estrutura completa.
 
 -- Extensão para geração de UUIDs
@@ -396,7 +396,7 @@ VALUES (
   '{
     "id": "admin-master",
     "name": "Administrador",
-    "email": "admin@goldimob.ia",
+    "email": "admin@webimob.com",
     "role": "admin",
     "avatar": "https://ui-avatars.com/api/?name=Admin&background=0c4a6e&color=fff",
     "blocked": false

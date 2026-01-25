@@ -3,9 +3,11 @@ import { useStore } from '../store';
 import { Card, Input, Badge, Button, PhoneInput } from '../components/ui/Elements';
 import { 
     Search, MessageCircle, Mail, Phone, Share2, 
-    Trash2, X, Filter, User, Plus, Save
+    Trash2, X, Filter, User, Plus, Save, DollarSign, MapPin, Bed, Ruler,
+    Bath, Car, Loader2
 } from 'lucide-react';
-import { Client, LeadSource } from '../types';
+import { Client, LeadSource, PropertyType } from '../types';
+import { searchCep } from '../services/viaCep';
 
 export const LeadsPage: React.FC = () => {
     const { clients, currentUser, removeClient, addNotification, addClient, systemSettings, pipelines } = useStore();
@@ -21,8 +23,19 @@ export const LeadsPage: React.FC = () => {
         phone: '',
         email: '',
         source: 'Manual / Balcão' as LeadSource,
-        notes: ''
+        notes: '',
+        // Interest Fields
+        budget: '',
+        interest: [] as string[],
+        location: '',
+        minBedrooms: '',
+        minBathrooms: '',
+        minParking: '',
+        minArea: ''
     });
+
+    const [cepInput, setCepInput] = useState('');
+    const [isCepLoading, setIsCepLoading] = useState(false);
 
     // Filtering
     const filteredClients = useMemo(() => {
@@ -84,6 +97,31 @@ export const LeadsPage: React.FC = () => {
         }
     };
 
+    const toggleInterest = (type: string) => {
+        setNewLeadData(prev => {
+            const current = prev.interest;
+            if (current.includes(type)) return { ...prev, interest: current.filter(t => t !== type) };
+            return { ...prev, interest: [...current, type] };
+        });
+    }
+
+    const handleCepSearch = async () => {
+        const cleanCep = cepInput.replace(/\D/g, '');
+        if (cleanCep.length < 8) return;
+        
+        setIsCepLoading(true);
+        const data = await searchCep(cleanCep);
+        setIsCepLoading(false);
+        
+        if (data && !data.erro) {
+            const loc = `${data.localidade} - ${data.bairro}`;
+            setNewLeadData(prev => ({ ...prev, location: loc }));
+            addNotification('success', 'Localização encontrada!');
+        } else {
+            addNotification('error', 'CEP não encontrado.');
+        }
+    };
+
     const handleAddLead = (e: React.FormEvent) => {
         e.preventDefault();
         
@@ -98,9 +136,15 @@ export const LeadsPage: React.FC = () => {
             source: newLeadData.source,
             pipelineId: defaultPipelineId,
             stage: defaultStageId,
-            budget: 0,
-            interest: [],
-            desiredLocation: [],
+            // Map Interest Fields
+            budget: Number(newLeadData.budget) || 0,
+            interest: newLeadData.interest,
+            desiredLocation: newLeadData.location ? [newLeadData.location] : [],
+            minBedrooms: Number(newLeadData.minBedrooms) || 0,
+            minBathrooms: Number(newLeadData.minBathrooms) || 0,
+            minParking: Number(newLeadData.minParking) || 0,
+            minArea: Number(newLeadData.minArea) || 0,
+            
             notes: newLeadData.notes,
             // Required empty fields
             interestedPropertyIds: [],
@@ -112,7 +156,11 @@ export const LeadsPage: React.FC = () => {
         if (success) {
             addNotification('success', 'Lead cadastrado com sucesso!');
             setIsAddModalOpen(false);
-            setNewLeadData({ name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '' });
+            setNewLeadData({ 
+                name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
+                budget: '', interest: [], location: '', minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
+            });
+            setCepInput('');
         }
     };
 
@@ -277,8 +325,8 @@ export const LeadsPage: React.FC = () => {
             {/* Add Lead Modal */}
             {isAddModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl sticky top-0 z-10">
                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                 <Plus size={20} className="text-primary-600"/> Cadastrar Lead
                             </h2>
@@ -286,48 +334,151 @@ export const LeadsPage: React.FC = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleAddLead} className="p-6 space-y-4">
-                            <Input 
-                                label="Nome Completo" 
-                                required 
-                                value={newLeadData.name}
-                                onChange={e => setNewLeadData({...newLeadData, name: e.target.value})}
-                            />
-                            <div className="grid grid-cols-2 gap-4">
-                                <PhoneInput 
-                                    label="Telefone / WhatsApp"
-                                    required
-                                    value={newLeadData.phone}
-                                    onChange={e => setNewLeadData({...newLeadData, phone: e.target.value})}
-                                />
+                        <form onSubmit={handleAddLead} className="p-6 space-y-5">
+                            {/* Basic Info */}
+                            <div className="space-y-4">
                                 <Input 
-                                    label="Email" 
-                                    type="email"
-                                    value={newLeadData.email}
-                                    onChange={e => setNewLeadData({...newLeadData, email: e.target.value})}
+                                    label="Nome Completo" 
+                                    required 
+                                    value={newLeadData.name}
+                                    onChange={e => setNewLeadData({...newLeadData, name: e.target.value})}
                                 />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <PhoneInput 
+                                        label="Telefone"
+                                        required
+                                        value={newLeadData.phone}
+                                        onChange={e => setNewLeadData({...newLeadData, phone: e.target.value})}
+                                    />
+                                    <Input 
+                                        label="Email" 
+                                        type="email"
+                                        value={newLeadData.email}
+                                        onChange={e => setNewLeadData({...newLeadData, email: e.target.value})}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 block mb-1">Origem</label>
+                                    <select 
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                        value={newLeadData.source}
+                                        onChange={e => setNewLeadData({...newLeadData, source: e.target.value})}
+                                    >
+                                        {systemSettings.leadSources.map((s, i) => (
+                                            <option key={i} value={s}>{s}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
-                            <div>
-                                <label className="text-sm font-medium text-slate-700 block mb-1">Origem</label>
-                                <select 
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
-                                    value={newLeadData.source}
-                                    onChange={e => setNewLeadData({...newLeadData, source: e.target.value})}
-                                >
-                                    {systemSettings.leadSources.map((s, i) => (
-                                        <option key={i} value={s}>{s}</option>
-                                    ))}
-                                </select>
+
+                            <div className="h-px bg-slate-100 my-2"></div>
+
+                            {/* Interest Profile */}
+                            <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Perfil de Interesse</h3>
+                                
+                                {/* Budget */}
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 flex items-center gap-1 mb-1"><DollarSign size={14} /> Orçamento Máximo</label>
+                                    <Input 
+                                        type="number"
+                                        placeholder="R$ 0,00"
+                                        value={newLeadData.budget}
+                                        onChange={e => setNewLeadData({...newLeadData, budget: e.target.value})}
+                                    />
+                                </div>
+
+                                {/* Location with CEP */}
+                                <div className="space-y-1">
+                                    <label className="text-sm font-medium text-slate-700 flex items-center gap-1"><MapPin size={14} /> Localização Desejada</label>
+                                    <div className="flex gap-2 mb-2">
+                                        <div className="w-1/3 relative">
+                                            <Input 
+                                                placeholder="CEP"
+                                                value={cepInput}
+                                                onChange={e => setCepInput(e.target.value)}
+                                                onBlur={handleCepSearch} // Search on blur too for convenience
+                                                maxLength={9}
+                                            />
+                                            {isCepLoading && <Loader2 className="absolute right-3 top-2.5 animate-spin text-primary-600" size={16} />}
+                                        </div>
+                                        <div className="w-2/3">
+                                            <Input 
+                                                placeholder="Bairro e Cidade"
+                                                value={newLeadData.location}
+                                                onChange={e => setNewLeadData({...newLeadData, location: e.target.value})}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Property Types */}
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 block mb-2">Tipos de Imóvel</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {systemSettings.propertyTypes.map(t => (
+                                            <button 
+                                                key={t.value} 
+                                                type="button"
+                                                onClick={() => toggleInterest(t.value)}
+                                                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${newLeadData.interest.includes(t.value) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                                            >
+                                                {t.label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Detailed Specs Grid */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Bed size={12} /> Min Quartos</label>
+                                        <Input 
+                                            type="number"
+                                            value={newLeadData.minBedrooms}
+                                            onChange={e => setNewLeadData({...newLeadData, minBedrooms: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Bath size={12} /> Min Banheiros</label>
+                                        <Input 
+                                            type="number"
+                                            value={newLeadData.minBathrooms}
+                                            onChange={e => setNewLeadData({...newLeadData, minBathrooms: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Car size={12} /> Min Garagem</label>
+                                        <Input 
+                                            type="number"
+                                            value={newLeadData.minParking}
+                                            onChange={e => setNewLeadData({...newLeadData, minParking: e.target.value})}
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Ruler size={12} /> Min Área (m²)</label>
+                                        <Input 
+                                            type="number"
+                                            value={newLeadData.minArea}
+                                            onChange={e => setNewLeadData({...newLeadData, minArea: e.target.value})}
+                                        />
+                                    </div>
+                                </div>
                             </div>
+
+                            <div className="h-px bg-slate-100 my-2"></div>
+
                             <div>
-                                <label className="text-sm font-medium text-slate-700 block mb-1">Observações</label>
+                                <label className="text-sm font-medium text-slate-700 block mb-1">Observações Gerais</label>
                                 <textarea 
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20 resize-none"
+                                    placeholder="Ex: Cliente prefere andar alto, sol da manhã..."
                                     value={newLeadData.notes}
                                     onChange={e => setNewLeadData({...newLeadData, notes: e.target.value})}
                                 />
                             </div>
-                            <div className="pt-4 flex justify-end gap-2">
+
+                            <div className="pt-2 flex justify-end gap-2">
                                 <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancelar</Button>
                                 <Button type="submit">Cadastrar</Button>
                             </div>

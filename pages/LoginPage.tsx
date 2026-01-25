@@ -49,7 +49,7 @@ export const LoginPage: React.FC = () => {
                     <div>
                         <h2 className="text-4xl font-bold mb-4 leading-tight">O futuro da gestão imobiliária está aqui.</h2>
                         <p className="text-slate-300 text-lg max-w-md">
-                            Inteligência Artificial, gestão de leads e contratos digitais em uma única plataforma integrada.
+                            Tudo que você precisa para gestão de sua imobiliária está aqui.
                         </p>
                     </div>
                     <div className="text-sm text-slate-500">

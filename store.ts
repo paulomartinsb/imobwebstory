@@ -73,7 +73,7 @@ interface AppState {
 const DEFAULT_ADMIN: User = {
   id: 'admin-master',
   name: 'Administrador',
-  email: 'admin@goldimob.ia',
+  email: 'admin@webimob.com',
   role: 'admin',
   avatar: 'https://ui-avatars.com/api/?name=Admin&background=0c4a6e&color=fff',
   blocked: false
@@ -293,7 +293,7 @@ export const useStore = create<AppState>()(
           allowNewRegistrations: true,
           requirePropertyApproval: true,
           maintenanceMode: false,
-          companyName: 'GoldImob AI',
+          companyName: 'WebImob',
           propertyTypes: DEFAULT_PROPERTY_TYPES,
           propertyFeatures: DEFAULT_FEATURES,
           leadSources: DEFAULT_LEAD_SOURCES,
