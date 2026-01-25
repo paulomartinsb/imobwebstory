@@ -266,10 +266,10 @@ export const useStore = create<AppState>()(
           crmGlobalInsightsPrompt: DEFAULT_CRM_GLOBAL_PROMPT,
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
           // Default API Key
-          geminiApiKey: '',
+          geminiApiKey: process.env.GEMINI_API_KEY || '',
           // Default Supabase config with provided credentials (or empty for production safety)
-          supabaseUrl: 'https://sqbipjfbevtmcvmgvpbj.supabase.co',
-          supabaseAnonKey: 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN',
+          supabaseUrl: process.env.SUPABASE_URL || '',
+          supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
           // Default Lead Aging Config
           leadAging: {
               freshLimit: 2, // 0 to 2 days = Fresh
@@ -714,6 +714,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'goldimob-storage',
+      version: 2, // Changed version to clear old cache and ensure new admin loads
       // We persist almost everything to keep the state consistent across reloads during dev
       partialize: (state) => ({ 
           users: state.users,
