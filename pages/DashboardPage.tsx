@@ -28,14 +28,20 @@ export const DashboardPage: React.FC = () => {
   const [selectedBrokerId, setSelectedBrokerId] = useState<string>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
+  // Helper to get Local ISO Date (YYYY-MM-DD) avoiding UTC shifts
+  const toLocalISO = (date: Date) => {
+      const offset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offset).toISOString().split('T')[0];
+  }
+
   // Performance Filters
   const [perfStartDate, setPerfStartDate] = useState(() => {
       const date = new Date();
-      date.setDate(1); // First day of current month
-      return date.toISOString().split('T')[0];
+      date.setDate(date.getDate() - 30); // Default: Last 30 days
+      return toLocalISO(date);
   });
   const [perfEndDate, setPerfEndDate] = useState(() => {
-      return new Date().toISOString().split('T')[0]; // Today
+      return toLocalISO(new Date()); // Today
   });
 
   const isAdmin = currentUser?.role === 'admin';
@@ -161,9 +167,9 @@ export const DashboardPage: React.FC = () => {
       if (!isAdmin) return [];
 
       const start = new Date(perfStartDate);
-      start.setHours(0, 0, 0, 0);
+      start.setHours(0, 0, 0, 0); // Local start of day
       const end = new Date(perfEndDate);
-      end.setHours(23, 59, 59, 999);
+      end.setHours(23, 59, 59, 999); // Local end of day
 
       // Get Settings (or defaults if missing)
       const config = systemSettings.teamPerformance || {
@@ -178,20 +184,38 @@ export const DashboardPage: React.FC = () => {
       return users
           .filter(u => u.role === 'broker' || u.role === 'captator')
           .map(user => {
-              // 1. Properties Created
-              const propsCount = properties.filter(p => {
-                  const pDate = new Date(p.createdAt || 0);
-                  return p.authorId === user.id && pDate >= start && pDate <= end;
+              // 1. Properties Logic
+              const userAllProperties = properties.filter(p => p.authorId === user.id);
+              
+              // Metric: Props Pending (Total Backlog - ignores date filter to show current status)
+              const propsPending = userAllProperties.filter(p => p.status === 'pending_approval').length;
+
+              // Metric: Props Approved (Productivity in period)
+              // Checks if 'approvedAt' falls in period. Fallback to 'createdAt' if approvedAt is missing.
+              const propsApproved = userAllProperties.filter(p => {
+                  if (p.status !== 'published') return false;
+                  
+                  // Use approval date if exists, otherwise creation date
+                  const dateToCheckStr = p.approvedAt || p.createdAt;
+                  if (!dateToCheckStr) return false;
+
+                  const dateToCheck = new Date(dateToCheckStr);
+                  return dateToCheck >= start && dateToCheck <= end;
               }).length;
 
-              // 2. Leads Created (Only for Brokers mainly, but tracked for all)
+              // Filter for Period Metrics (Created in period for general activity status)
+              const propsCreatedInPeriod = userAllProperties.filter(p => {
+                  const pDate = new Date(p.createdAt || 0);
+                  return pDate >= start && pDate <= end;
+              }).length;
+
+              // 2. Leads Created (Captured in Period)
               const leadsCount = clients.filter(c => {
                   const cDate = new Date(c.createdAt);
                   return c.ownerId === user.id && cDate >= start && cDate <= end;
               }).length;
 
-              // 3. Visits Performed (Based on leads owned by the user)
-              // NOTE: This assumes the broker who owns the lead does the visit.
+              // 3. Visits Performed (Completed in Period)
               const visitsCount = clients
                   .filter(c => c.ownerId === user.id)
                   .flatMap(c => c.visits)
@@ -204,28 +228,27 @@ export const DashboardPage: React.FC = () => {
               let status: 'active' | 'inactive' | 'warning' = 'active';
               let message = config.activeLabel;
 
+              // We use "propsCreated" or "propsApproved" as sign of property activity
+              const activityProperties = Math.max(propsCreatedInPeriod, propsApproved);
+
               if (user.role === 'broker') {
-                  // Broker Logic: Needs to meet minimums
-                  const metProps = propsCount >= config.minProperties;
+                  const metProps = activityProperties >= config.minProperties;
                   const metLeads = leadsCount >= config.minLeads;
                   const metVisits = visitsCount >= config.minVisits;
 
-                  if (propsCount === 0 && leadsCount === 0 && visitsCount === 0) {
+                  if (activityProperties === 0 && leadsCount === 0 && visitsCount === 0) {
                       status = 'inactive';
                       message = config.inactiveLabel;
                   } else if (!metProps && !metLeads && !metVisits) {
-                      // Has some activity but below ALL thresholds
                       status = 'warning';
                       message = config.warningLabel;
                   } else {
-                      // Meets at least one requirement or is generally active
                       status = 'active';
                       message = config.activeLabel;
                   }
               } else if (user.role === 'captator') {
-                  // Captator Logic: Mainly Properties
-                  if (propsCount < config.minProperties) {
-                      if (propsCount === 0) {
+                  if (activityProperties < config.minProperties) {
+                      if (activityProperties === 0) {
                           status = 'inactive';
                           message = config.inactiveLabel;
                       } else {
@@ -240,9 +263,10 @@ export const DashboardPage: React.FC = () => {
                   name: user.name,
                   role: user.role,
                   avatar: user.avatar,
-                  propsCount,
-                  leadsCount,
-                  visitsCount,
+                  propsPending, // Display Metric: Total Pending (Backlog)
+                  propsApproved, // Display Metric: Approved in Period
+                  leadsCount,    // Display Metric: Leads in Period
+                  visitsCount,   // Display Metric: Visits in Period
                   status,
                   message
               };
@@ -343,10 +367,11 @@ export const DashboardPage: React.FC = () => {
                       <thead className="bg-white border-b border-slate-100 text-slate-500 font-semibold uppercase text-xs">
                           <tr>
                               <th className="px-6 py-4">Membro</th>
-                              <th className="px-6 py-4 text-center">Imóveis Enviados</th>
-                              <th className="px-6 py-4 text-center">Leads Captados</th>
-                              <th className="px-6 py-4 text-center">Visitas Realizadas</th>
-                              <th className="px-6 py-4 text-right">Status</th>
+                              <th className="px-6 py-4 text-center" title="Total na fila, independente da data">Aguardando Aprovação</th>
+                              <th className="px-6 py-4 text-center" title="Aprovados dentro do período selecionado">Imóveis Aprovados</th>
+                              <th className="px-6 py-4 text-center" title="Criados dentro do período selecionado">Leads Captados</th>
+                              <th className="px-6 py-4 text-center" title="Concluídas dentro do período selecionado">Visitas Realizadas</th>
+                              <th className="px-6 py-4 text-right">Status (Período)</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
@@ -362,10 +387,21 @@ export const DashboardPage: React.FC = () => {
                                       </div>
                                   </td>
                                   <td className="px-6 py-4 text-center">
-                                      {stat.propsCount === 0 ? (
+                                      {stat.propsPending === 0 ? (
                                           <span className="text-slate-300">-</span>
                                       ) : (
-                                          <span className="font-bold text-slate-700">{stat.propsCount}</span>
+                                          <span className="font-bold text-amber-600 flex items-center justify-center gap-1">
+                                              <FileSignature size={12} /> {stat.propsPending}
+                                          </span>
+                                      )}
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                      {stat.propsApproved === 0 ? (
+                                          <span className="text-slate-300">-</span>
+                                      ) : (
+                                          <span className="font-bold text-emerald-600 flex items-center justify-center gap-1">
+                                              <CheckCircle size={12} /> {stat.propsApproved}
+                                          </span>
                                       )}
                                   </td>
                                   <td className="px-6 py-4 text-center">
@@ -403,7 +439,7 @@ export const DashboardPage: React.FC = () => {
                           ))}
                           {teamPerformanceData.length === 0 && (
                               <tr>
-                                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                  <td colSpan={6} className="px-6 py-8 text-center text-slate-400 italic">
                                       Nenhum corretor ou captador encontrado na equipe.
                                   </td>
                               </tr>

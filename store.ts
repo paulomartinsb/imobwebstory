@@ -624,6 +624,8 @@ export const useStore = create<AppState>()(
             authorId: user.id,
             status: status,
             approvedBy: (isStaff || !requireApproval) ? user.id : undefined,
+            submittedAt: status === 'pending_approval' ? new Date().toISOString() : undefined,
+            approvedAt: (isStaff || !requireApproval) ? new Date().toISOString() : undefined,
             createdAt: new Date().toISOString()
         };
 
@@ -646,7 +648,14 @@ export const useStore = create<AppState>()(
       updateProperty: (propertyId, updates) => set((state) => {
           const oldProperty = state.properties.find(p => p.id === propertyId);
           if (!oldProperty) return state;
-          const newProperty = { ...oldProperty, ...updates };
+          
+          const enhancedUpdates = { ...updates };
+          if (updates.status === 'pending_approval') {
+              // Store submission date when sending for approval (edit or resubmit)
+              enhancedUpdates.submittedAt = new Date().toISOString();
+          }
+
+          const newProperty = { ...oldProperty, ...enhancedUpdates };
           if (updates.status === 'pending_approval') newProperty.rejectionReason = undefined;
 
           const newLog = createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, 'Imóvel atualizado', oldProperty, newProperty);
@@ -668,7 +677,9 @@ export const useStore = create<AppState>()(
           const newProperty = { 
               ...oldProperty, 
               status: newStatus,
-              rejectionReason: reason 
+              rejectionReason: reason,
+              submittedAt: newStatus === 'pending_approval' ? new Date().toISOString() : oldProperty.submittedAt,
+              approvedAt: newStatus === 'published' ? new Date().toISOString() : oldProperty.approvedAt
           };
           
           if (newStatus === 'published' && !newProperty.approvedBy) newProperty.approvedBy = state.currentUser?.id;
@@ -699,6 +710,7 @@ export const useStore = create<AppState>()(
               ...oldProperty, 
               status: 'published' as const, 
               approvedBy: user.id, 
+              approvedAt: new Date().toISOString(),
               rejectionReason: undefined 
           };
 

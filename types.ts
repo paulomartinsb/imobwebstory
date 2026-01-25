@@ -72,6 +72,10 @@ export interface Property {
   authorId: string; // Quem cadastrou
   approvedBy?: string; // Quem aprovou (se aplicável)
   rejectionReason?: string; // Motivo da reprovação (se aplicável)
+  
+  submittedAt?: string; // Data de envio para aprovação (Entrada na fila)
+  approvedAt?: string;  // Data da aprovação (Publicação)
+
   code: string;
   title: string;
   type: PropertyType;
