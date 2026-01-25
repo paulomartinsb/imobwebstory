@@ -333,6 +333,21 @@ create table if not exists logs (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- 6. INSERIR USUÁRIO ADMINISTRADOR PADRÃO
+-- Email: admin@goldimob.ia | Senha: (Gerenciada pela aplicação: 123456)
+INSERT INTO users (id, content)
+VALUES (
+  'admin-master',
+  '{
+    "id": "admin-master",
+    "name": "Administrador",
+    "email": "admin@goldimob.ia",
+    "role": "admin",
+    "avatar": "https://ui-avatars.com/api/?name=Admin&background=0c4a6e&color=fff",
+    "blocked": false
+  }'::jsonb
+) ON CONFLICT (id) DO NOTHING;
+
 -- POLÍTICAS DE SEGURANÇA (RLS)
 -- Ativar RLS
 alter table properties enable row level security;
@@ -350,7 +365,7 @@ create policy "Public Access Pipelines" on pipelines for all using (true) with c
 create policy "Public Access Logs" on logs for all using (true) with check (true);
       `;
       navigator.clipboard.writeText(sql);
-      addNotification('success', 'SQL Completo copiado para a área de transferência!');
+      addNotification('success', 'SQL Completo (com usuário Admin) copiado!');
   };
 
   const roleOptions: { value: UserRole; label: string }[] = [

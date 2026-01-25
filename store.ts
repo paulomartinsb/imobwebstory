@@ -68,7 +68,7 @@ interface AppState {
 const DEFAULT_ADMIN: User = {
   id: 'admin-master',
   name: 'Administrador',
-  email: 'admin@goldimob.com.br',
+  email: 'admin@goldimob.ia',
   role: 'admin',
   avatar: 'https://ui-avatars.com/api/?name=Admin&background=0c4a6e&color=fff',
   blocked: false
