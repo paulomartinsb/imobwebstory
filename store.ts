@@ -266,13 +266,11 @@ const syncToCloud = (settings: SystemSettings, table: string, data: any, isDelet
     // 1. Try to get from State
     let { supabaseUrl, supabaseAnonKey } = settings;
     
-    // 2. Fallback to Env if state is empty (Critical for post-clear-cache behavior)
-    if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
-    if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
+    // 2. Fallback to defaults if state is empty
+    if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
+    if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
 
     if (!supabaseUrl || !supabaseAnonKey) {
-        // Silently fail or warn if needed, but don't crash
-        // console.warn('Sync aborted: Missing Supabase Credentials');
         return; 
     }
 
@@ -305,9 +303,9 @@ export const useStore = create<AppState>()(
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
           // Default API Key (Try env first)
           geminiApiKey: getEnv('VITE_GEMINI_API_KEY') || '',
-          // Default Supabase config (Try env first)
-          supabaseUrl: getEnv('VITE_SUPABASE_URL') || '',
-          supabaseAnonKey: getEnv('VITE_SUPABASE_ANON_KEY') || '',
+          // Default Supabase config (Pre-configured per user request)
+          supabaseUrl: getEnv('VITE_SUPABASE_URL') || 'https://sqbipjfbevtmcvmgvpbj.supabase.co',
+          supabaseAnonKey: getEnv('VITE_SUPABASE_ANON_KEY') || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN',
           // Default Lead Aging Config
           leadAging: {
               freshLimit: 2, // 0 to 2 days = Fresh
@@ -329,13 +327,11 @@ export const useStore = create<AppState>()(
           const state = get();
           
           // 1. RESOLVE CREDENTIALS ROBUSTLY
-          // Try local state first, but immediately fallback to ENV if missing.
-          // This fixes the "Clear Cache = Broken App" issue.
           const envUrl = getEnv('VITE_SUPABASE_URL');
           const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
           
-          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl;
-          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey;
+          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
+          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
 
           if (!supabaseUrl || !supabaseAnonKey) {
               console.warn("Supabase not configured. Operating in local mode.");
@@ -348,11 +344,11 @@ export const useStore = create<AppState>()(
           if (settingsRes.data && settingsRes.data.length > 0) {
               const cloudSettings = settingsRes.data.find((s: any) => s.id === 'global-settings');
               if (cloudSettings) {
-                  // Merge cloud settings but PRESERVE ENV KEYS if cloud is empty on keys
+                  // Merge cloud settings but PRESERVE Keys if cloud is empty on keys
                   const mergedSettings = {
                       ...state.systemSettings,
                       ...cloudSettings,
-                      // Ensure we don't overwrite valid env/local keys with empty strings from a bad DB entry
+                      // Ensure we don't overwrite valid keys with empty strings from a bad DB entry
                       supabaseUrl: cloudSettings.supabaseUrl || supabaseUrl,
                       supabaseAnonKey: cloudSettings.supabaseAnonKey || supabaseAnonKey,
                       geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || ''
@@ -396,8 +392,8 @@ export const useStore = create<AppState>()(
           const envUrl = getEnv('VITE_SUPABASE_URL');
           const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
           
-          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl;
-          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey;
+          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
+          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
 
           if (!supabaseUrl || !supabaseAnonKey) return;
 

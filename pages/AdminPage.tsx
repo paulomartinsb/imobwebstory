@@ -331,6 +331,9 @@ export const AdminPage: React.FC = () => {
           matchAiPrompt: DEFAULT_MATCH_PROMPT,
           crmGlobalInsightsPrompt: DEFAULT_CRM_GLOBAL_PROMPT,
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
+          // PRE-CONFIGURED KEYS FOR DB
+          supabaseUrl: 'https://sqbipjfbevtmcvmgvpbj.supabase.co',
+          supabaseAnonKey: 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN',
           leadAging: {
               freshLimit: 2,
               warmLimit: 7,
