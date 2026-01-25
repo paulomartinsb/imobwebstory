@@ -805,6 +805,9 @@ export const CRMPage: React.FC = () => {
   const handleOpenEdit = (client: Client) => {
       setEditingClientId(client.id);
       setFoundClient(null);
+      
+      const profile = client.interestProfile || {} as any;
+
       // Load client data into form
       setFormData({
           name: client.name,
@@ -812,25 +815,19 @@ export const CRMPage: React.FC = () => {
           phone: client.phone,
           source: client.source,
           ownerId: client.ownerId,
-          interestProfile: client.interestProfile || {
-              // Fallback for legacy clients
-              propertyTypes: client.interest,
-              condition: 'indiferente',
-              usage: 'moradia',
-              cities: [],
-              neighborhoods: client.desiredLocation || [],
-              proximityTo: [],
-              minBedrooms: client.minBedrooms || 0,
-              minSuites: 0,
-              minParking: client.minParking || 0,
-              minArea: client.minArea || 0,
-              mustHaveFeatures: client.desiredFeatures || [],
-              maxPrice: client.budget,
-              paymentMethod: 'vista',
-              hasFgts: false,
-              sunOrientation: 'indiferente',
-              floorPreference: 'indiferente',
-              notes: client.notes || ''
+          interestProfile: {
+              // Ensure we merge defaults so required fields are never missing
+              ...initialFormState.interestProfile,
+              ...profile,
+              // Fallbacks for legacy clients without new profile structure
+              propertyTypes: profile.propertyTypes || client.interest || [],
+              neighborhoods: profile.neighborhoods || client.desiredLocation || [],
+              mustHaveFeatures: profile.mustHaveFeatures || client.desiredFeatures || [],
+              maxPrice: profile.maxPrice || client.budget || 0,
+              minBedrooms: profile.minBedrooms || client.minBedrooms || 0,
+              minParking: profile.minParking || client.minParking || 0,
+              minArea: profile.minArea || client.minArea || 0,
+              notes: profile.notes || client.notes || ''
           }
       });
       setNewVisitDate('');
@@ -1026,7 +1023,13 @@ export const CRMPage: React.FC = () => {
               notes: profile.notes,
               
               // New Profile
-              interestProfile: profile
+              interestProfile: profile,
+              
+              // New Required Fields (even if empty)
+              interestedPropertyIds: [],
+              familyMembers: [],
+              documents: [],
+              followers: []
           }, finalOwnerId);
           
           if(success) {
@@ -1171,31 +1174,25 @@ export const CRMPage: React.FC = () => {
 
   const loadExistingClient = () => {
       if (!foundClient) return;
+      const profile = foundClient.interestProfile || {} as any;
       setFormData({
           name: foundClient.name,
           email: foundClient.email,
           phone: foundClient.phone,
           source: foundClient.source,
           ownerId: foundClient.ownerId,
-          interestProfile: foundClient.interestProfile || {
-              // Legacy map
-              propertyTypes: foundClient.interest,
-              condition: 'indiferente',
-              usage: 'moradia',
-              cities: [],
-              neighborhoods: foundClient.desiredLocation || [],
-              proximityTo: [],
-              minBedrooms: foundClient.minBedrooms || 0,
-              minSuites: 0,
-              minParking: foundClient.minParking || 0,
-              minArea: foundClient.minArea || 0,
-              mustHaveFeatures: foundClient.desiredFeatures || [],
-              maxPrice: foundClient.budget,
-              paymentMethod: 'vista',
-              hasFgts: false,
-              sunOrientation: 'indiferente',
-              floorPreference: 'indiferente',
-              notes: foundClient.notes || ''
+          interestProfile: {
+              ...initialFormState.interestProfile,
+              ...profile,
+              // Legacy map fallbacks
+              propertyTypes: profile.propertyTypes || foundClient.interest || [],
+              neighborhoods: profile.neighborhoods || foundClient.desiredLocation || [],
+              mustHaveFeatures: profile.mustHaveFeatures || foundClient.desiredFeatures || [],
+              maxPrice: profile.maxPrice || foundClient.budget || 0,
+              minBedrooms: profile.minBedrooms || foundClient.minBedrooms || 0,
+              minParking: profile.minParking || foundClient.minParking || 0,
+              minArea: profile.minArea || foundClient.minArea || 0,
+              notes: profile.notes || foundClient.notes || ''
           }
       });
       setEditingClientId(foundClient.id);
@@ -2255,7 +2252,7 @@ export const CRMPage: React.FC = () => {
                                       <h4 className="font-bold text-slate-800 text-lg">{bestMatchSuggestion.property.title}</h4>
                                       <p className="text-sm text-slate-600 mt-1 italic">"{bestMatchSuggestion.reason}"</p>
                                       <div className="mt-3 flex gap-2">
-                                          <Button size="sm" className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 border-none" onClick={() => setViewProperty(bestMatchSuggestion.property)}>
+                                          <Button className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 border-none" onClick={() => setViewProperty(bestMatchSuggestion.property)}>
                                               Ver Detalhes
                                           </Button>
                                       </div>

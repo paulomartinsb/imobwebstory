@@ -93,16 +93,22 @@ export const PublicLeadFormPage: React.FC = () => {
           phone: formData.phone,
           budget: Number(formData.budget),
           minBudget: formData.minBudget ? Number(formData.minBudget) : undefined,
-          interest: formData.interest.length > 0 ? formData.interest : ['apartment'],
+          interest: formData.interest.length > 0 ? formData.interest : ['apartamento'],
           stage: 'new',
-          source: 'Website', // Static for public form
+          source: 'Site Oficial', // Static for public form
           desiredLocation: formData.desiredLocation,
           minBedrooms: formData.minBedrooms ? Number(formData.minBedrooms) : undefined,
           minBathrooms: formData.minBathrooms ? Number(formData.minBathrooms) : undefined,
           minParking: formData.minParking ? Number(formData.minParking) : undefined,
           minArea: formData.minArea ? Number(formData.minArea) : undefined,
           desiredFeatures: formData.desiredFeatures,
-          notes: formData.notes
+          notes: formData.notes,
+          
+          // Added required fields for Typescript compliance
+          interestedPropertyIds: [],
+          familyMembers: [],
+          documents: [],
+          followers: []
       }, brokerId);
 
       setSubmitted(true);

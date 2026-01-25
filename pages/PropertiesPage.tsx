@@ -46,7 +46,7 @@ export const PropertiesPage: React.FC = () => {
 
   // Permissions Check
   const isBroker = currentUser?.role === 'broker';
-  const isStaff = !isBroker && currentUser; // Admin, Finance, Employee
+  const isStaff = !isBroker && !!currentUser; // Admin, Finance, Employee - Ensure boolean
 
   // Form State for New/Edit Property
   const [editingId, setEditingId] = useState<string | null>(null);
