@@ -4,19 +4,23 @@ import { Card, Input, Badge, Button, PhoneInput } from '../components/ui/Element
 import { 
     Search, MessageCircle, Mail, Phone, Share2, 
     Trash2, X, Filter, User, Plus, Save, DollarSign, MapPin, Bed, Ruler,
-    Bath, Car, Loader2, Edit3
+    Bath, Car, Loader2, Edit3, Eye, Calendar, FileText
 } from 'lucide-react';
 import { Client, LeadSource, PropertyType } from '../types';
 import { searchCep } from '../services/viaCep';
 
 export const LeadsPage: React.FC = () => {
-    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines } = useStore();
+    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines, logs } = useStore();
     const [searchText, setSearchText] = useState('');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
     const [filterSource, setFilterSource] = useState<string>('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+
+    // Profile View State
+    const [viewClient, setViewClient] = useState<Client | null>(null);
+    const [activeProfileTab, setActiveProfileTab] = useState<'info' | 'history'>('info');
 
     // New Lead Form State
     const [newLeadData, setNewLeadData] = useState({
@@ -41,7 +45,7 @@ export const LeadsPage: React.FC = () => {
 
     // Filtering
     const filteredClients = useMemo(() => {
-        let result = clients;
+        let result = clients.filter(c => !c.deletedAt); // Hide deleted leads
 
         // Permission Filter
         if (currentUser?.role === 'broker') {
@@ -66,6 +70,27 @@ export const LeadsPage: React.FC = () => {
         // Sort by Newest
         return result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     }, [clients, searchText, filterSource, currentUser]);
+
+    // History Helper
+    const getClientHistory = (client: Client) => {
+        const clientLogs = logs.filter(l => l.entity === 'client' && l.entityId === client.id).map(l => ({
+            type: 'log',
+            date: new Date(l.timestamp),
+            title: l.action === 'create' ? 'Lead Criado' : l.action === 'update' ? 'Atualização de Dados' : l.details,
+            description: l.details,
+            color: 'bg-blue-500'
+        }));
+
+        const clientVisits = (client.visits || []).map(v => ({
+            type: 'visit',
+            date: new Date(v.date),
+            title: 'Visita Agendada',
+            description: `Status: ${v.status === 'completed' ? 'Realizada' : v.status === 'scheduled' ? 'Agendada' : 'Cancelada'}. ${v.notes || ''}`,
+            color: v.status === 'completed' ? 'bg-green-500' : 'bg-orange-500'
+        }));
+
+        return [...clientLogs, ...clientVisits].sort((a, b) => b.date.getTime() - a.date.getTime());
+    };
 
     const handleQuickAction = (action: string) => {
         if (!selectedClient) return;
@@ -94,7 +119,7 @@ export const LeadsPage: React.FC = () => {
     };
 
     const handleDelete = (id: string) => {
-        if (window.confirm('Tem certeza que deseja excluir este lead?')) {
+        if (window.confirm('Tem certeza que deseja excluir este lead? Ele será movido para o histórico.')) {
             removeClient(id);
         }
     };
@@ -308,6 +333,13 @@ export const LeadsPage: React.FC = () => {
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2">
                                             <button 
+                                                onClick={() => setViewClient(client)}
+                                                className="p-2 text-slate-500 hover:text-primary-600 hover:bg-slate-100 rounded-lg transition-colors"
+                                                title="Ver Perfil Completo"
+                                            >
+                                                <Eye size={18} />
+                                            </button>
+                                            <button 
                                                 onClick={() => openActionModal(client)}
                                                 className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
                                                 title="Contatar"
@@ -343,6 +375,170 @@ export const LeadsPage: React.FC = () => {
                     </table>
                 </div>
             </div>
+
+            {/* View Profile Modal */}
+            {viewClient && (
+                <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden shadow-2xl flex flex-col">
+                        {/* Header */}
+                        <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-start">
+                            <div className="flex items-center gap-4">
+                                <div className="w-16 h-16 bg-white border-2 border-white shadow rounded-full flex items-center justify-center text-2xl font-bold text-primary-600 uppercase select-none">
+                                    {viewClient.name.substring(0, 2)}
+                                </div>
+                                <div>
+                                    <h2 className="text-xl font-bold text-slate-800">{viewClient.name}</h2>
+                                    <div className="flex items-center gap-2 mt-1">
+                                        <Badge color="blue">{viewClient.source}</Badge>
+                                        <span className="text-xs text-slate-500">Cadastrado em {new Date(viewClient.createdAt).toLocaleDateString()}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={() => setViewClient(null)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        {/* Tabs */}
+                        <div className="flex border-b border-slate-100 bg-white">
+                            <button 
+                                onClick={() => setActiveProfileTab('info')}
+                                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeProfileTab === 'info' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                Perfil de Interesse
+                            </button>
+                            <button 
+                                onClick={() => setActiveProfileTab('history')}
+                                className={`flex-1 py-3 text-sm font-medium border-b-2 transition-colors ${activeProfileTab === 'history' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:bg-slate-50'}`}
+                            >
+                                Histórico & Atividades
+                            </button>
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 overflow-y-auto p-6 bg-white">
+                            {activeProfileTab === 'info' && (
+                                <div className="space-y-6">
+                                    {/* Contact Info */}
+                                    <div className="grid grid-cols-2 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase">Email</label>
+                                            <p className="text-sm text-slate-700 font-medium truncate">{viewClient.email || 'Não informado'}</p>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase">Telefone</label>
+                                            <p className="text-sm text-slate-700 font-medium">{viewClient.phone}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Financial */}
+                                    <div>
+                                        <h3 className="text-sm font-bold text-slate-800 uppercase mb-3 flex items-center gap-2">
+                                            <DollarSign size={16} className="text-primary-600" /> Preferências Financeiras
+                                        </h3>
+                                        <div className="flex gap-4">
+                                            <div className="flex-1 p-3 border border-slate-200 rounded-lg">
+                                                <label className="text-xs text-slate-500">Orçamento Máximo</label>
+                                                <p className="text-lg font-bold text-emerald-600">
+                                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(viewClient.budget)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Property Preferences */}
+                                    <div>
+                                        <h3 className="text-sm font-bold text-slate-800 uppercase mb-3 flex items-center gap-2">
+                                            <MapPin size={16} className="text-primary-600" /> Preferências de Imóvel
+                                        </h3>
+                                        
+                                        <div className="space-y-3">
+                                            <div>
+                                                <label className="text-xs font-medium text-slate-500 block mb-1">Localizações</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {viewClient.desiredLocation && viewClient.desiredLocation.length > 0 ? (
+                                                        viewClient.desiredLocation.map((loc, i) => (
+                                                            <span key={i} className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200">{loc}</span>
+                                                        ))
+                                                    ) : <span className="text-sm text-slate-400 italic">Nenhuma localização específica.</span>}
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-medium text-slate-500 block mb-1">Tipos</label>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {viewClient.interest && viewClient.interest.length > 0 ? (
+                                                        viewClient.interest.map((type, i) => (
+                                                            <span key={i} className="px-2 py-1 bg-slate-100 text-slate-600 rounded text-xs border border-slate-200 capitalize">{type}</span>
+                                                        ))
+                                                    ) : <span className="text-sm text-slate-400 italic">Qualquer tipo.</span>}
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-4 gap-2 text-center mt-2">
+                                                <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                    <Bed size={16} className="mx-auto text-slate-400 mb-1"/>
+                                                    <span className="text-xs font-bold text-slate-700">{viewClient.minBedrooms || 0}+</span>
+                                                </div>
+                                                <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                    <Bath size={16} className="mx-auto text-slate-400 mb-1"/>
+                                                    <span className="text-xs font-bold text-slate-700">{viewClient.minBathrooms || 0}+</span>
+                                                </div>
+                                                <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                    <Car size={16} className="mx-auto text-slate-400 mb-1"/>
+                                                    <span className="text-xs font-bold text-slate-700">{viewClient.minParking || 0}+</span>
+                                                </div>
+                                                <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                                                    <Ruler size={16} className="mx-auto text-slate-400 mb-1"/>
+                                                    <span className="text-xs font-bold text-slate-700">{viewClient.minArea || 0}m²</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Notes */}
+                                    {viewClient.notes && (
+                                        <div className="p-4 bg-yellow-50 border border-yellow-100 rounded-xl">
+                                            <h4 className="text-xs font-bold text-yellow-700 uppercase mb-1">Observações</h4>
+                                            <p className="text-sm text-yellow-800 leading-relaxed whitespace-pre-wrap">{viewClient.notes}</p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {activeProfileTab === 'history' && (
+                                <div className="relative border-l-2 border-slate-100 ml-3 space-y-6 pb-4 pt-2">
+                                    {getClientHistory(viewClient).map((item, idx) => (
+                                        <div key={idx} className="relative pl-6">
+                                            <div className={`absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-white shadow-sm ${item.color}`}></div>
+                                            <div className="flex flex-col gap-1">
+                                                <span className="text-xs font-mono text-slate-400">{item.date.toLocaleString()}</span>
+                                                <h4 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                                    {item.title}
+                                                </h4>
+                                                <p className="text-sm text-slate-500">{item.description}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {getClientHistory(viewClient).length === 0 && (
+                                        <div className="text-center py-8 text-slate-400 italic pl-6">
+                                            Nenhum histórico recente registrado.
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Footer */}
+                        <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+                            <Button variant="outline" onClick={() => setViewClient(null)}>Fechar</Button>
+                            <Button onClick={() => { setViewClient(null); handleEditClick(viewClient); }}>
+                                <Edit3 size={16} className="mr-2"/> Editar Perfil
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Quick Action Modal */}
             {isActionModalOpen && selectedClient && (
