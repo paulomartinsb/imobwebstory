@@ -64,15 +64,15 @@ interface AppState {
   restoreState: (logId: string) => void;
 }
 
-// Mock Users
-const MOCK_USERS: User[] = [
-  { id: 'u1', name: 'Carlos Admin', email: 'admin@imob.com', role: 'admin', avatar: 'https://i.pravatar.cc/150?u=u1', blocked: false },
-  { id: 'u2', name: 'Ana Financeiro', email: 'financeiro@imob.com', role: 'finance', avatar: 'https://i.pravatar.cc/150?u=u2', blocked: false },
-  { id: 'u3', name: 'Beatriz Staff', email: 'staff@imob.com', role: 'employee', avatar: 'https://i.pravatar.cc/150?u=u3', blocked: false },
-  { id: 'u4', name: 'João Corretor', email: 'joao@imob.com', role: 'broker', avatar: 'https://i.pravatar.cc/150?u=u4', blocked: false },
-  { id: 'u5', name: 'Paulo Martins', email: 'paulo@imob.com', role: 'broker', avatar: 'https://i.pravatar.cc/150?u=u5', blocked: false },
-  { id: 'u6', name: 'Lucas Captador', email: 'lucas@imob.com', role: 'captator', avatar: 'https://i.pravatar.cc/150?u=u6', blocked: false },
-];
+// Initial Admin User for Production
+const DEFAULT_ADMIN: User = {
+  id: 'admin-master',
+  name: 'Administrador',
+  email: 'admin@goldimob.com.br',
+  role: 'admin',
+  avatar: 'https://ui-avatars.com/api/?name=Admin&background=0c4a6e&color=fff',
+  blocked: false
+};
 
 const DEFAULT_PIPELINE: Pipeline = {
     id: 'p1',
@@ -250,7 +250,7 @@ export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
       currentUser: null, // Initial State is Logged Out
-      users: MOCK_USERS,
+      users: [DEFAULT_ADMIN], // Start with only Admin
       systemSettings: {
           allowNewRegistrations: true,
           requirePropertyApproval: true,
@@ -267,7 +267,7 @@ export const useStore = create<AppState>()(
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
           // Default API Key
           geminiApiKey: '',
-          // Default Supabase config with provided credentials
+          // Default Supabase config with provided credentials (or empty for production safety)
           supabaseUrl: 'https://sqbipjfbevtmcvmgvpbj.supabase.co',
           supabaseAnonKey: 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN',
           // Default Lead Aging Config
@@ -282,134 +282,13 @@ export const useStore = create<AppState>()(
       pipelines: [DEFAULT_PIPELINE],
       logs: [], 
       
-      properties: [
-        {
-          id: '1',
-          authorId: 'u4',
-          code: 'IMOB-001',
-          title: 'Cobertura Duplex Jardins',
-          type: 'apartamento',
-          description: 'Espetacular cobertura...',
-          price: 2500000,
-          area: 320,
-          bedrooms: 4,
-          bathrooms: 5,
-          address: 'Rua Oscar Freire, 1200 - SP',
-          features: ['Piscina', 'Churrasqueira', 'Portaria 24h'],
-          status: 'published',
-          images: ['https://picsum.photos/800/600?random=1', 'https://picsum.photos/800/600?random=11', 'https://picsum.photos/800/600?random=12'],
-          createdAt: '2023-10-20T10:00:00Z'
-        },
-        {
-          id: '2',
-          authorId: 'u5',
-          code: 'IMOB-002',
-          title: 'Casa em Condomínio',
-          type: 'casa',
-          description: 'Casa moderna...',
-          price: 1800000,
-          area: 450,
-          bedrooms: 5,
-          bathrooms: 6,
-          address: 'Alphaville, Barueri - SP',
-          features: ['Segurança Armada'],
-          status: 'pending_approval',
-          images: ['https://picsum.photos/800/600?random=2'],
-          createdAt: '2023-10-22T14:30:00Z'
-        },
-      ],
-      clients: [
-        {
-          id: 'c1',
-          ownerId: 'u4',
-          pipelineId: 'p1',
-          name: 'Roberto Almeida',
-          email: 'roberto@email.com',
-          phone: '11999999999',
-          budget: 2000000,
-          minBudget: 1500000,
-          interest: ['casa', 'apartamento'],
-          desiredLocation: ['São Paulo - Jardins', 'São Paulo - Pinheiros'],
-          minBedrooms: 3,
-          minBathrooms: 2,
-          minParking: 2,
-          stage: 'visit',
-          nextVisit: new Date(new Date().setDate(new Date().getDate() + 1)).toISOString(), // Amanhã
-          visits: [
-              { 
-                  id: 'v1', 
-                  date: new Date(new Date().setDate(new Date().getDate() + 1)).toISOString(), 
-                  propertyId: '1', 
-                  status: 'scheduled',
-                  notes: 'Primeira visita'
-              }
-          ],
-          interestedPropertyIds: ['1'],
-          familyMembers: [],
-          documents: [],
-          followers: [],
-          lastContact: '2023-10-25',
-          source: 'Indicação',
-          createdAt: '2023-10-20'
-        },
-        {
-          id: 'c2',
-          ownerId: 'u5',
-          pipelineId: 'p1',
-          name: 'Fernanda Costa',
-          email: 'fernanda@email.com',
-          phone: '11988888888',
-          budget: 400000,
-          interest: ['apartamento'],
-          desiredLocation: ['São Paulo - Centro'],
-          minArea: 50,
-          stage: 'new',
-          lastContact: '2023-10-26',
-          source: 'Instagram',
-          visits: [],
-          interestedPropertyIds: [],
-          familyMembers: [],
-          documents: [],
-          followers: [],
-          createdAt: '2023-10-26'
-        },
-        {
-            id: 'c3',
-            ownerId: 'u4',
-            pipelineId: 'p1',
-            name: 'Carlos & Ana',
-            email: 'casal@email.com',
-            phone: '11977777777',
-            budget: 2600000,
-            interest: ['apartamento', 'comercial'],
-            desiredLocation: ['São Paulo - Itaim Bibi'],
-            minBedrooms: 2,
-            stage: 'proposal',
-            nextVisit: new Date().toISOString(), // Hoje
-            visits: [
-                { 
-                  id: 'v2', 
-                  date: new Date().toISOString(), 
-                  propertyId: '2', 
-                  status: 'scheduled',
-                  notes: 'Cliente quer ver área de lazer'
-                }
-            ],
-            interestedPropertyIds: ['1', '2'],
-            familyMembers: [],
-            documents: [],
-            followers: [],
-            lastContact: '2023-10-24',
-            source: 'Site Oficial',
-            createdAt: '2023-10-15'
-        }
-      ],
+      properties: [], // Empty for Production
+      clients: [], // Empty for Production
       notifications: [],
 
       setCurrentUser: (userId) => {
           const user = get().users.find(u => u.id === userId);
           if (user) {
-              // Block check for demo switcher
               if(user.blocked) {
                   get().addNotification('error', `O usuário ${user.name} está bloqueado.`);
                   return;
@@ -421,6 +300,7 @@ export const useStore = create<AppState>()(
 
       login: (email, password) => {
           const user = get().users.find(u => u.email === email);
+          // Simple auth check - In production this should verify hash or call backend
           if (user && password === '123456') {
               if (user.blocked) {
                   get().addNotification('error', 'Acesso bloqueado. Entre em contato com o administrador.');

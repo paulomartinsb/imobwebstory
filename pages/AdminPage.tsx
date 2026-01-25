@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
@@ -102,7 +102,7 @@ const StringListManager: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-  const { currentUser, users, updateUserRole, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, addNotification } = useStore();
+  const { currentUser, users, updateUserRole, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification } = useStore();
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs' | 'database'>('users');
   
   // Local state for settings form
@@ -246,81 +246,111 @@ export const AdminPage: React.FC = () => {
 
   // --- Database Seed ---
   const handleSeedDatabase = async () => {
-      if (!window.confirm("Isso tentará inserir TODOS os dados locais atuais (imóveis e clientes) no Supabase. Continuar?")) return;
+      if (!window.confirm("ATENÇÃO: Isso enviará TODOS os dados locais (Imóveis, Clientes, Usuários, Pipelines, Logs) para o banco de dados. Certifique-se que as tabelas foram criadas. Continuar?")) return;
       
       setIsSyncing(true);
-      setSyncLog(['Iniciando sincronização...']);
+      setSyncLog(['Iniciando backup completo para nuvem...']);
       
       let successCount = 0;
       let errorCount = 0;
 
-      // Sync Properties
-      for (const p of properties) {
-          const res = await syncEntityToSupabase('properties', p);
-          if (res.error) {
-              setSyncLog(prev => [...prev, `Erro Imóvel ${p.id}: ${JSON.stringify(res.error)}`]);
-              errorCount++;
-          } else {
-              successCount++;
+      // Helper for sync
+      const syncList = async (list: any[], tableName: string, label: string) => {
+          setSyncLog(prev => [...prev, `Sincronizando ${label}... (${list.length} itens)`]);
+          for (const item of list) {
+              const res = await syncEntityToSupabase(tableName, item);
+              if (res.error) {
+                  setSyncLog(prev => [...prev, `[ERRO] ${label} ID ${item.id}: ${JSON.stringify(res.error)}`]);
+                  errorCount++;
+              } else {
+                  successCount++;
+              }
           }
-      }
+      };
 
-      // Sync Clients
-      for (const c of clients) {
-          const res = await syncEntityToSupabase('clients', c);
-          if (res.error) {
-              setSyncLog(prev => [...prev, `Erro Cliente ${c.id}: ${JSON.stringify(res.error)}`]);
-              errorCount++;
-          } else {
-              successCount++;
-          }
-      }
+      // 1. Users
+      await syncList(users, 'users', 'Usuários');
+      // 2. Pipelines (Config)
+      await syncList(pipelines, 'pipelines', 'Pipelines (CRM)');
+      // 3. Properties
+      await syncList(properties, 'properties', 'Imóveis');
+      // 4. Clients (Includes Visits)
+      await syncList(clients, 'clients', 'Clientes e Visitas');
+      // 5. Logs
+      await syncList(logs, 'logs', 'Logs de Auditoria');
 
-      setSyncLog(prev => [...prev, `Finalizado. Sucesso: ${successCount}, Erros: ${errorCount}`]);
+      setSyncLog(prev => [...prev, `---------------------------------`]);
+      setSyncLog(prev => [...prev, `Processo finalizado.`]);
+      setSyncLog(prev => [...prev, `Total Enviado: ${successCount}`]);
+      setSyncLog(prev => [...prev, `Total Falhas: ${errorCount}`]);
+      
       setIsSyncing(false);
       
       if(errorCount === 0) {
-          addNotification('success', 'Sincronização concluída com sucesso!');
+          addNotification('success', 'Backup completo realizado com sucesso!');
       } else {
-          addNotification('info', 'Sincronização concluída com erros. Verifique o log.');
+          addNotification('info', 'Backup concluído com alertas. Verifique o log.');
       }
   };
 
   const copySqlSchema = () => {
       const sql = `
--- Crie estas tabelas no Supabase SQL Editor para usar o sistema
+-- TABELAS DO SISTEMA GOLDIMOB AI
+-- Execute este script no SQL Editor do Supabase para criar a estrutura completa.
 
+-- 1. Imóveis
 create table if not exists properties (
   id text primary key,
-  content jsonb not null,
+  content jsonb not null, -- Armazena todos os campos do imóvel
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- 2. Clientes / Leads (Inclui Visitas aninhadas no JSON)
 create table if not exists clients (
   id text primary key,
-  content jsonb not null,
+  content jsonb not null, -- Armazena perfil, interesses e visitas
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
+-- 3. Usuários (Equipe)
+create table if not exists users (
+  id text primary key,
+  content jsonb not null, -- Armazena nome, email, role, avatar
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 4. Pipelines (Configuração dos funis de venda)
+create table if not exists pipelines (
+  id text primary key,
+  content jsonb not null, -- Armazena estágios e configurações
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 5. Logs de Auditoria
 create table if not exists logs (
   id text primary key,
-  content jsonb not null,
+  content jsonb not null, -- Histórico de ações
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Ativar RLS (Opcional, mas recomendado para produção real)
+-- POLÍTICAS DE SEGURANÇA (RLS)
+-- Ativar RLS
 alter table properties enable row level security;
 alter table clients enable row level security;
+alter table users enable row level security;
+alter table pipelines enable row level security;
 alter table logs enable row level security;
 
--- Política simples (DEV ONLY): Permitir tudo para publico (anon)
--- Em produção, substitua por políticas de auth.uid()
-create policy "Allow all access for anon" on properties for all using (true) with check (true);
-create policy "Allow all access for anon" on clients for all using (true) with check (true);
-create policy "Allow all access for anon" on logs for all using (true) with check (true);
+-- Políticas de Desenvolvimento (Permitir acesso público temporário)
+-- EM PRODUÇÃO: Substitua por políticas baseadas em auth.uid()
+create policy "Public Access Properties" on properties for all using (true) with check (true);
+create policy "Public Access Clients" on clients for all using (true) with check (true);
+create policy "Public Access Users" on users for all using (true) with check (true);
+create policy "Public Access Pipelines" on pipelines for all using (true) with check (true);
+create policy "Public Access Logs" on logs for all using (true) with check (true);
       `;
       navigator.clipboard.writeText(sql);
-      addNotification('success', 'SQL copiado para a área de transferência!');
+      addNotification('success', 'SQL Completo copiado para a área de transferência!');
   };
 
   const roleOptions: { value: UserRole; label: string }[] = [
@@ -691,57 +721,92 @@ create policy "Allow all access for anon" on logs for all using (true) with chec
       {activeTab === 'database' && (
           <div className="space-y-6">
               <Card className="p-6 border-l-4 border-l-emerald-600">
-                  <div className="flex justify-between items-start mb-4">
+                  <div className="flex justify-between items-start mb-6">
                       <div>
                           <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                              <Database className="text-emerald-600" size={20} />
-                              Instalação e Migração
+                              <Database className="text-emerald-600" size={24} />
+                              Gerenciamento do Banco de Dados
                           </h3>
-                          <p className="text-sm text-slate-500">Ferramentas para configurar o banco de dados Supabase.</p>
+                          <p className="text-sm text-slate-500">Ferramentas para configurar e popular o Supabase (Nuvem).</p>
                       </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Step 1 */}
-                      <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
-                              <span className="bg-slate-200 text-slate-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
-                              Criar Tabelas (SQL)
-                          </h4>
-                          <p className="text-xs text-slate-500 mb-4">
-                              Copie o código SQL abaixo e execute no painel do Supabase (SQL Editor) para criar a estrutura necessária.
-                          </p>
-                          <Button variant="outline" className="w-full gap-2 text-sm" onClick={copySqlSchema}>
-                              <Code size={16} /> Copiar SQL
-                          </Button>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Section 1: Schema Structure */}
+                      <div className="space-y-4">
+                          <div className="flex items-center gap-3 mb-2">
+                              <span className="bg-slate-200 text-slate-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">1</span>
+                              <h4 className="font-bold text-slate-700 text-lg">Criar Tabela com Todos os Campos</h4>
+                          </div>
+                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 h-full flex flex-col justify-between">
+                              <div className="mb-4">
+                                  <div className="flex items-center gap-2 text-slate-800 font-semibold mb-2">
+                                      <Server size={18} /> Estrutura SQL
+                                  </div>
+                                  <p className="text-sm text-slate-600 leading-relaxed">
+                                      Gera o script SQL para criar as tabelas necessárias para armazenar <strong>todos os dados do sistema</strong>.
+                                  </p>
+                                  <ul className="text-xs text-slate-500 mt-3 space-y-1 list-disc list-inside">
+                                      <li>Imóveis (Properties)</li>
+                                      <li>Clientes e Visitas (Clients)</li>
+                                      <li>Usuários e Equipe (Users)</li>
+                                      <li>Funis de Venda e Etapas (Pipelines)</li>
+                                      <li>Logs de Auditoria (Logs)</li>
+                                  </ul>
+                              </div>
+                              <Button variant="outline" className="w-full gap-2 border-slate-300 hover:bg-white hover:border-primary-500 hover:text-primary-600 transition-all" onClick={copySqlSchema}>
+                                  <Code size={18} /> Copiar SQL Completo
+                              </Button>
+                          </div>
                       </div>
 
-                      {/* Step 2 */}
-                      <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
-                              <span className="bg-slate-200 text-slate-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
-                              Popular Banco (Seed)
-                          </h4>
-                          <p className="text-xs text-slate-500 mb-4">
-                              Envia todos os dados locais atuais (Imóveis, Clientes) para o Supabase configurado. Use com cuidado.
-                          </p>
-                          <Button 
-                            className="w-full gap-2 text-sm bg-emerald-600 hover:bg-emerald-700" 
-                            onClick={handleSeedDatabase}
-                            isLoading={isSyncing}
-                          >
-                              <RefreshCcw size={16} /> Enviar Dados Locais para o Banco
-                          </Button>
+                      {/* Section 2: Data Population */}
+                      <div className="space-y-4">
+                          <div className="flex items-center gap-3 mb-2">
+                              <span className="bg-slate-200 text-slate-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">2</span>
+                              <h4 className="font-bold text-slate-700 text-lg">Popular com Dados de Todas as Etapas</h4>
+                          </div>
+                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 h-full flex flex-col justify-between">
+                              <div className="mb-4">
+                                  <div className="flex items-center gap-2 text-slate-800 font-semibold mb-2">
+                                      <UploadCloud size={18} /> Sincronização (Seed)
+                                  </div>
+                                  <p className="text-sm text-slate-600 leading-relaxed">
+                                      Envia <strong>todo o banco de dados local</strong> atual para a nuvem. Isso inclui configurações de CRM, usuários, histórico e leads em todas as etapas.
+                                  </p>
+                                  <div className="mt-3 p-2 bg-yellow-50 border border-yellow-100 rounded text-xs text-yellow-800 flex gap-2">
+                                      <AlertTriangle size={14} className="shrink-0 mt-0.5"/>
+                                      Use isso apenas para backup inicial ou migração completa.
+                                  </div>
+                              </div>
+                              <Button 
+                                className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20" 
+                                onClick={handleSeedDatabase}
+                                isLoading={isSyncing}
+                              >
+                                  <RefreshCcw size={18} /> Popular Tudo Agora
+                              </Button>
+                          </div>
                       </div>
                   </div>
 
                   {/* Log Area */}
                   {syncLog.length > 0 && (
-                      <div className="mt-6 bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-xs max-h-40 overflow-y-auto">
-                          <p className="text-slate-500 font-bold mb-2 uppercase border-b border-slate-700 pb-1">Log de Sincronização:</p>
-                          {syncLog.map((line, idx) => (
-                              <div key={idx} className="mb-1">{line}</div>
-                          ))}
+                      <div className="mt-8 bg-slate-900 text-slate-300 p-5 rounded-xl font-mono text-xs max-h-60 overflow-y-auto border border-slate-800 shadow-inner">
+                          <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-3">
+                              <p className="text-slate-400 font-bold uppercase flex items-center gap-2">
+                                  <CheckCircle size={14}/> Log de Execução
+                              </p>
+                              <button onClick={() => setSyncLog([])} className="text-slate-500 hover:text-white"><X size={14}/></button>
+                          </div>
+                          <div className="space-y-1.5">
+                              {syncLog.map((line, idx) => (
+                                  <div key={idx} className={`${line.includes('[ERRO]') ? 'text-red-400' : 'text-slate-300'}`}>
+                                      <span className="opacity-30 mr-2">{new Date().toLocaleTimeString()}</span>
+                                      {line}
+                                  </div>
+                              ))}
+                          </div>
                       </div>
                   )}
               </Card>

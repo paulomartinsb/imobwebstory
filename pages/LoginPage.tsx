@@ -116,24 +116,6 @@ export const LoginPage: React.FC = () => {
                             Entrar no Sistema <ArrowRight size={18} />
                         </Button>
                     </form>
-                    
-                    {/* Demo Credentials Hint */}
-                    <div className="pt-6 border-t border-slate-100">
-                        <p className="text-xs text-center text-slate-400 uppercase font-semibold mb-3">Credenciais de Demonstração</p>
-                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-600">
-                            <div className="bg-slate-50 p-2 rounded border border-slate-100 text-center">
-                                <span className="font-bold block text-slate-800">Admin</span>
-                                admin@imob.com
-                            </div>
-                            <div className="bg-slate-50 p-2 rounded border border-slate-100 text-center">
-                                <span className="font-bold block text-slate-800">Corretor</span>
-                                joao@imob.com
-                            </div>
-                            <div className="col-span-2 text-center text-slate-400 mt-1">
-                                Senha padrão: <span className="font-mono text-slate-600">123456</span>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>

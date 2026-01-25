@@ -17,32 +17,6 @@ export const SettingsPage: React.FC = () => {
             <p className="text-slate-500">Gerencie seu perfil e preferências do sistema</p>
         </div>
 
-        {/* Role Switcher Demo Panel */}
-        <Card className="p-6 bg-indigo-50 border-indigo-100 mb-6">
-            <div className="flex items-center gap-3 mb-4 text-indigo-900">
-                <Users size={24} />
-                <h3 className="text-lg font-bold">Simular Acesso (Demo)</h3>
-            </div>
-            <p className="text-sm text-indigo-700 mb-4">
-                Alterne entre diferentes usuários para testar o sistema de permissões (RBAC).
-            </p>
-            <div className="flex flex-wrap gap-2">
-                {users.map(user => (
-                    <button
-                        key={user.id}
-                        onClick={() => setCurrentUser(user.id)}
-                        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
-                            currentUser?.id === user.id 
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' 
-                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                        }`}
-                    >
-                        {user.name} ({user.role})
-                    </button>
-                ))}
-            </div>
-        </Card>
-
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <Card className="p-6 col-span-1 h-fit">
                 <div className="flex flex-col items-center text-center">
