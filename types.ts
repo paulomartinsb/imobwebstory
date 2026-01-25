@@ -1,4 +1,5 @@
 
+
 export type PropertyType = string; // Changed from union to string to allow dynamic types
 export type PropertyStatus = 'draft' | 'pending_approval' | 'published' | 'sold' | 'reserved' | 'inactive';
 export type UserRole = 'admin' | 'finance' | 'employee' | 'broker' | 'captator';
@@ -12,6 +13,7 @@ export interface User {
   role: UserRole;
   avatar: string;
   blocked?: boolean; // New: Indica se o acesso está bloqueado
+  deletedAt?: string; // Soft delete timestamp
 }
 
 export interface PropertyTypeOption {
@@ -103,6 +105,7 @@ export interface Property {
   status: PropertyStatus;
   images: string[]; // Changed from 'image: string' to support gallery (max 10)
   createdAt?: string; // New field for date filtering
+  deletedAt?: string; // Soft delete timestamp
 }
 
 // Dynamic Pipeline Types
@@ -210,6 +213,7 @@ export interface Client {
   
   // Lost Logic
   lostReason?: string; // Motivo da perda
+  deletedAt?: string; // Soft delete timestamp
 }
 
 export interface DashboardMetrics {

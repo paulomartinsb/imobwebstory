@@ -32,6 +32,7 @@ const KanbanColumn: React.FC<{
 
   // Filter clients based on local search (Name or Phone)
   const filteredClients = useMemo(() => {
+      // Base filtering for deletedAt handled in parent, local search here
       if (!searchTerm) return clients;
       const lowerTerm = searchTerm.toLowerCase();
       return clients.filter(c => 
@@ -102,6 +103,17 @@ const KanbanColumn: React.FC<{
 
         {/* List */}
         <div className="flex-1 space-y-3 overflow-y-auto pb-4 pr-1 custom-scrollbar px-1">
+            {/* Novo Lead Button - MOVED TO TOP */}
+            {isFirst && !searchTerm && (
+                <button 
+                    onClick={(e) => { e.stopPropagation(); onQuickAdd(); }}
+                    className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 font-medium flex items-center justify-center gap-2 hover:border-primary-400 hover:text-primary-600 hover:bg-white/50 transition-all group opacity-70 hover:opacity-100"
+                >
+                    <Plus size={18} className="group-hover:scale-110 transition-transform"/>
+                    Novo Lead
+                </button>
+            )}
+
             {filteredClients.map((client: Client) => (
                 <ClientCard 
                     key={client.id} 
@@ -119,16 +131,6 @@ const KanbanColumn: React.FC<{
                     onRemoveVisit={onRemoveVisit}
                 />
             ))}
-            
-            {isFirst && !searchTerm && (
-                <button 
-                    onClick={(e) => { e.stopPropagation(); onQuickAdd(); }}
-                    className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 font-medium flex items-center justify-center gap-2 hover:border-primary-400 hover:text-primary-600 hover:bg-white/50 transition-all group opacity-70 hover:opacity-100"
-                >
-                    <Plus size={18} className="group-hover:scale-110 transition-transform"/>
-                    Novo Lead
-                </button>
-            )}
             
             {filteredClients.length === 0 && searchTerm && (
                 <div className="text-center py-4 text-xs text-slate-400 italic">
@@ -578,6 +580,7 @@ export const CRMPage: React.FC = () => {
   const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
   
   const pipelineClients = clients.filter(c => {
+      if (c.deletedAt) return false; // Filter soft deleted
       if (c.pipelineId !== currentPipelineId) return false;
       if (isBroker) return c.ownerId === currentUser?.id;
       if (isStaff) {
@@ -629,6 +632,7 @@ export const CRMPage: React.FC = () => {
       
       const candidates = properties.filter(p => 
           p.status === 'published' && 
+          !p.deletedAt &&
           p.price <= maxPrice && 
           p.price >= minPrice &&
           (client.interest.length === 0 || client.interest.includes(p.type))
@@ -899,7 +903,7 @@ export const CRMPage: React.FC = () => {
                                      <label className="text-sm font-medium text-slate-700 block mb-1">Responsável (Corretor)</label>
                                      <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.ownerId} onChange={e => setFormData({...formData, ownerId: e.target.value})}>
                                          <option value="">-- Selecione --</option>
-                                         {users.filter(u => u.role === 'broker').map(u => (
+                                         {users.filter(u => u.role === 'broker' && !u.deletedAt).map(u => (
                                              <option key={u.id} value={u.id}>{u.name}</option>
                                          ))}
                                      </select>
