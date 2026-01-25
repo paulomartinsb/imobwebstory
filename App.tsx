@@ -38,11 +38,37 @@ const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
 };
 
 function App() {
-  const { currentUser, loadFromSupabase } = useStore();
+  const { currentUser, loadFromSupabase, systemSettings, updateSystemSettings } = useStore();
 
   // Load cloud data on mount
   useEffect(() => {
-      loadFromSupabase();
+      // FIX for "Local DB" stuck issue:
+      // If store settings are empty but .env has values, force update from .env
+      const getEnv = (key: string) => {
+          try {
+              // @ts-ignore
+              return import.meta.env?.[key];
+          } catch (e) {
+              return undefined;
+          }
+      };
+
+      const envSupabaseUrl = getEnv('VITE_SUPABASE_URL');
+      const envSupabaseKey = getEnv('VITE_SUPABASE_ANON_KEY');
+      const envGeminiKey = getEnv('VITE_GEMINI_API_KEY');
+
+      if ((!systemSettings.supabaseUrl && envSupabaseUrl) || (!systemSettings.geminiApiKey && envGeminiKey)) {
+          console.log("Detectadas variáveis de ambiente. Atualizando configurações...");
+          updateSystemSettings({
+              supabaseUrl: envSupabaseUrl || systemSettings.supabaseUrl,
+              supabaseAnonKey: envSupabaseKey || systemSettings.supabaseAnonKey,
+              geminiApiKey: envGeminiKey || systemSettings.geminiApiKey
+          });
+          // Small delay to ensure state updates before loading from cloud
+          setTimeout(() => loadFromSupabase(), 500);
+      } else {
+          loadFromSupabase();
+      }
   }, []);
 
   // Helper to determine the "Home" page based on role

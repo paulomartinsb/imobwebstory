@@ -1,10 +1,26 @@
 import { GoogleGenAI } from "@google/genai";
 import { Property, Client } from "../types";
+import { useStore } from "../store";
 
 // Helper function to get AI instance with current key
 const getAI = () => {
-    // The API key must be obtained exclusively from the environment variable process.env.API_KEY
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const settings = useStore.getState().systemSettings;
+    // Prefer store setting, fallback to safe env check
+    let apiKey = settings.geminiApiKey;
+    
+    // Safety check for env var in case store is empty but env is present (first load)
+    if (!apiKey) {
+        try {
+            // @ts-ignore
+            apiKey = import.meta.env?.VITE_GEMINI_API_KEY;
+        } catch(e) {}
+    }
+    
+    if (!apiKey) {
+        throw new Error("Chave da API do Google Gemini não configurada.");
+    }
+    
+    return new GoogleGenAI({ apiKey: apiKey });
 };
 
 interface PropertyGenerationData {
@@ -32,7 +48,7 @@ export const generatePropertyDescription = async (
   data: PropertyGenerationData
 ): Promise<string> => {
   try {
-    const ai = getAI(); // Get fresh instance
+    const ai = getAI(); // Get fresh instance with current key
     const featureList = data.features.length > 0 ? data.features.join(', ') : 'Não especificado';
     const priceFormatted = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(data.price);
 
@@ -67,7 +83,7 @@ export const generatePropertyDescription = async (
   } catch (error: any) {
     console.error("Gemini Error:", error);
     if (error.message && error.message.includes("API Key")) {
-        return "Erro: Chave da API Gemini não configurada corretamente no ambiente.";
+        return "Erro: Chave da API Gemini não configurada ou inválida.";
     }
     return "Erro ao gerar descrição com IA. Verifique a chave de API.";
   }

@@ -250,6 +250,15 @@ const calculateNextVisit = (visits: Visit[]): string | undefined => {
     return futureVisits.length > 0 ? futureVisits[0].date : undefined;
 }
 
+const getEnv = (key: string) => {
+    try {
+        // @ts-ignore
+        return import.meta.env?.[key];
+    } catch (e) {
+        return undefined;
+    }
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -270,10 +279,10 @@ export const useStore = create<AppState>()(
           crmGlobalInsightsPrompt: DEFAULT_CRM_GLOBAL_PROMPT,
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
           // Default API Key
-          geminiApiKey: process.env.VITE_GEMINI_API_KEY || '',
-          // Default Supabase config with provided credentials (or empty for production safety)
-          supabaseUrl: process.env.VITE_SUPABASE_URL || '',
-          supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || '',
+          geminiApiKey: getEnv('VITE_GEMINI_API_KEY') || '',
+          // Default Supabase config with provided credentials
+          supabaseUrl: getEnv('VITE_SUPABASE_URL') || '',
+          supabaseAnonKey: getEnv('VITE_SUPABASE_ANON_KEY') || '',
           // Default Lead Aging Config
           leadAging: {
               freshLimit: 2, // 0 to 2 days = Fresh
