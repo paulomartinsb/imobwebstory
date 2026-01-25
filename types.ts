@@ -8,6 +8,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  password?: string; // New: Password field for management
   role: UserRole;
   avatar: string;
   blocked?: boolean; // New: Indica se o acesso está bloqueado

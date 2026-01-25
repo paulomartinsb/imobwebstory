@@ -24,6 +24,7 @@ interface AppState {
   login: (email: string, password: string) => boolean;
   logout: () => void;
   updateUserRole: (userId: string, newRole: UserRole) => void;
+  updateUser: (userId: string, updates: Partial<User>) => void; // New Action
   addUser: (userData: Omit<User, 'id' | 'avatar'>) => boolean;
   removeUser: (userId: string) => void;
   toggleUserBlock: (userId: string) => void;
@@ -74,6 +75,7 @@ const DEFAULT_ADMIN: User = {
   id: 'admin-master',
   name: 'Administrador',
   email: 'admin@webimob.com',
+  password: '123456', // Default password
   role: 'admin',
   avatar: 'https://ui-avatars.com/api/?name=Admin&background=0c4a6e&color=fff',
   blocked: false
@@ -322,14 +324,11 @@ export const useStore = create<AppState>()(
       clients: [], // Empty for Production
       notifications: [],
 
-      // --- SUPABASE SYNC ACTION ---
+      // ... (Sync actions logic kept as is) ...
       loadFromSupabase: async () => {
           const state = get();
-          
-          // 1. RESOLVE CREDENTIALS ROBUSTLY
           const envUrl = getEnv('VITE_SUPABASE_URL');
           const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
-          
           const supabaseUrl = envUrl || state.systemSettings.supabaseUrl || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
           const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
 
@@ -338,29 +337,23 @@ export const useStore = create<AppState>()(
               return;
           }
 
-          // 2. FETCH SYSTEM SETTINGS FIRST (Prioritize Global Configuration)
           const settingsRes = await fetchEntitiesFromSupabase('system_settings', supabaseUrl, supabaseAnonKey);
           
           if (settingsRes.data && settingsRes.data.length > 0) {
               const cloudSettings = settingsRes.data.find((s: any) => s.id === 'global-settings');
               if (cloudSettings) {
-                  // Merge cloud settings but PRESERVE Keys if cloud is empty on keys
                   const mergedSettings = {
                       ...state.systemSettings,
                       ...cloudSettings,
-                      // Ensure we don't overwrite valid keys with empty strings from a bad DB entry
                       supabaseUrl: cloudSettings.supabaseUrl || supabaseUrl,
                       supabaseAnonKey: cloudSettings.supabaseAnonKey || supabaseAnonKey,
                       geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || ''
                   };
-                  
-                  // Update state immediately so subsequent fetches use correct config if needed
                   set({ systemSettings: mergedSettings });
                   console.log("Configurações Globais carregadas do Supabase.");
               }
           }
 
-          // 3. FETCH DATA ENTITIES
           const [usersRes, propsRes, clientsRes, pipeRes, logsRes] = await Promise.all([
               fetchEntitiesFromSupabase('users', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('properties', supabaseUrl, supabaseAnonKey),
@@ -372,7 +365,6 @@ export const useStore = create<AppState>()(
           const updates: Partial<AppState> = {};
           let hasUpdates = false;
 
-          // Only update if we got data back to avoid wiping if offline
           if (usersRes.data && usersRes.data.length > 0) { updates.users = usersRes.data; hasUpdates = true; }
           if (propsRes.data && propsRes.data.length > 0) { updates.properties = propsRes.data; hasUpdates = true; }
           if (clientsRes.data && clientsRes.data.length > 0) { updates.clients = clientsRes.data; hasUpdates = true; }
@@ -387,22 +379,16 @@ export const useStore = create<AppState>()(
 
       subscribeToRealtime: () => {
           const state = get();
-          
-          // 1. RESOLVE CREDENTIALS ROBUSTLY
           const envUrl = getEnv('VITE_SUPABASE_URL');
           const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
-          
           const supabaseUrl = envUrl || state.systemSettings.supabaseUrl || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
           const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
 
           if (!supabaseUrl || !supabaseAnonKey) return;
 
-          // Generic Handler to update store from incoming data
           const handleUpdate = (table: string, payload: any, type: 'INSERT' | 'UPDATE' | 'DELETE') => {
-              const data = payload.content; // Content is wrapped
+              const data = payload.content;
               if(!data || !data.id) return;
-
-              console.log(`Realtime ${type} on ${table}:`, data.id);
 
               set((current) => {
                   const updates: any = {};
@@ -436,16 +422,13 @@ export const useStore = create<AppState>()(
                           else updates.pipelines = [...current.pipelines, data];
                       }
                   } else if (table === 'system_settings') {
-                      // Only care about the global settings row
                       if (data.id === 'global-settings') {
-                          // Prevent overwriting keys with nulls if update is partial
                           updates.systemSettings = { 
                               ...current.systemSettings, 
                               ...data,
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
                               supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey
                           };
-                          // Remove structural ID
                           // @ts-ignore
                           delete updates.systemSettings.id;
                       }
@@ -455,7 +438,6 @@ export const useStore = create<AppState>()(
               });
           };
 
-          // Subscribe to tables
           const tables = ['properties', 'clients', 'users', 'pipelines', 'system_settings'];
           
           tables.forEach(table => {
@@ -467,7 +449,7 @@ export const useStore = create<AppState>()(
           });
       },
 
-      // ... (Auth actions unchanged) ...
+      // --- Auth Actions Updated ---
       setCurrentUser: (userId) => {
           const user = get().users.find(u => u.id === userId);
           if (user) {
@@ -482,16 +464,18 @@ export const useStore = create<AppState>()(
 
       login: (email, password) => {
           const user = get().users.find(u => u.email === email);
-          if (user && password === '123456') {
+          // Check against persisted password OR default '123456' for legacy
+          const validPassword = user?.password || '123456';
+          
+          if (user && password === validPassword) {
               if (user.blocked) {
                   get().addNotification('error', 'Acesso bloqueado. Entre em contato com o administrador.');
                   return false;
               }
               set({ currentUser: user });
               get().addNotification('success', `Bem-vindo de volta, ${user.name.split(' ')[0]}!`);
-              // Trigger sync on login
               get().loadFromSupabase();
-              get().subscribeToRealtime(); // Start Listening
+              get().subscribeToRealtime();
               return true;
           }
           return false;
@@ -519,6 +503,23 @@ export const useStore = create<AppState>()(
           };
       }),
 
+      // New generic Update User action
+      updateUser: (userId, updates) => set((state) => {
+          const updatedUsers = state.users.map(u => u.id === userId ? { ...u, ...updates } : u);
+          const updatedUser = updatedUsers.find(u => u.id === userId);
+          
+          // Also update current user session if it's the same person
+          const currentUser = state.currentUser?.id === userId ? { ...state.currentUser, ...updates } : state.currentUser;
+
+          if(updatedUser) syncToCloud(state.systemSettings, 'users', updatedUser);
+
+          return {
+              users: updatedUsers,
+              currentUser: currentUser,
+              notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Usuário atualizado com sucesso.' }]
+          };
+      }),
+
       addUser: (userData) => {
           const state = get();
           if (state.users.find(u => u.email === userData.email)) {
@@ -530,6 +531,7 @@ export const useStore = create<AppState>()(
                   id: Math.random().toString(36).substr(2, 9),
                   name: userData.name,
                   email: userData.email,
+                  password: '123456', // Default password
                   role: userData.role,
                   avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=random`,
                   blocked: false 
@@ -580,12 +582,12 @@ export const useStore = create<AppState>()(
           };
       }),
 
+      // ... (Rest of actions unchanged) ...
       updateSystemSettings: (newSettings) => set((state) => {
           const oldSettings = { ...state.systemSettings };
           const updatedSettings = { ...state.systemSettings, ...newSettings };
           const newLog = createLog(state.currentUser, 'update', 'settings', 'system', 'Configurações Globais', 'Alteração nas configurações do sistema', oldSettings, updatedSettings);
           
-          // SYNC SETTINGS TO CLOUD (Correctly wrapping in content and adding fixed ID)
           syncToCloud(updatedSettings, 'system_settings', { id: 'global-settings', ...updatedSettings });
           syncToCloud(updatedSettings, 'logs', newLog);
 
@@ -596,7 +598,6 @@ export const useStore = create<AppState>()(
           };
       }),
       
-      // ... (Other entity actions addProperty, addClient, etc. remain unchanged as they already call syncToCloud) ...
       addProperty: (propertyData) => set((state) => {
         const user = state.currentUser;
         if (!user) return state;
@@ -1019,9 +1020,7 @@ export const useStore = create<AppState>()(
       name: 'goldimob-storage',
       version: 3, 
       partialize: (state) => ({ 
-          // Only sync basic user info locally to keep session, everything else flows from Supabase
           currentUser: state.currentUser,
-          // Keeping systemSettings here as fallback/cache, but Supabase is authoritative
           systemSettings: state.systemSettings 
       }),
     }
