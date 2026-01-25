@@ -37,7 +37,7 @@ interface AppState {
   rejectProperty: (propertyId: string, reason: string) => void;
   
   // Client & Pipeline Actions
-  addClient: (client: Omit<Client, 'id' | 'ownerId' | 'createdAt' | 'lastContact' | 'visits'>, specificOwnerId?: string) => boolean; 
+  addClient: (client: Omit<Client, 'id' | 'ownerId' | 'createdAt' | 'lastContact' | 'visits'>, specificOwnerId?: string) => string | null; 
   addFamilyMember: (originClientId: string, memberData: { name: string, phone: string, email: string, relationship: string }) => void;
   updateClient: (clientId: string, updates: Partial<Client>) => void;
   removeClient: (clientId: string) => void;
@@ -271,7 +271,8 @@ const syncToCloud = (settings: SystemSettings, table: string, data: any, isDelet
     if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
 
     if (!supabaseUrl || !supabaseAnonKey) {
-        console.warn('Sync aborted: Missing Supabase Credentials');
+        // Silently fail or warn if needed, but don't crash
+        // console.warn('Sync aborted: Missing Supabase Credentials');
         return; 
     }
 
@@ -337,7 +338,7 @@ export const useStore = create<AppState>()(
           const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey;
 
           if (!supabaseUrl || !supabaseAnonKey) {
-              console.error("loadFromSupabase: No Credentials found in State or Env.");
+              console.warn("Supabase not configured. Operating in local mode.");
               return;
           }
 
@@ -784,14 +785,18 @@ export const useStore = create<AppState>()(
           const state = get();
           if (state.clients.find(c => c.phone === clientData.phone)) {
               state.addNotification('error', `Este telefone já pertence a um lead existente.`);
-              return false;
+              return null;
           }
+          
+          let newId = '';
           set((state) => {
             const ownerId = specificOwnerId || state.currentUser?.id;
             if (!ownerId) return state;
+            
+            newId = Math.random().toString(36).substr(2, 9);
             const newClient: Client = {
                 ...clientData,
-                id: Math.random().toString(36).substr(2, 9),
+                id: newId,
                 ownerId: ownerId,
                 visits: [],
                 interestedPropertyIds: [],
@@ -813,7 +818,7 @@ export const useStore = create<AppState>()(
                 notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Novo lead cadastrado!' }]
             };
           });
-          return true;
+          return newId;
       },
 
       addFamilyMember: (originClientId, memberData) => set((state) => {

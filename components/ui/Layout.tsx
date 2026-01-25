@@ -107,9 +107,9 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
               <>
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-2">Principal</div>
                   <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" />
-                  <SidebarItem to="/leads" icon={UserPlus} label="Base de Leads" />
+                  <SidebarItem to="/leads" icon={UserPlus} label="Leads" />
                   <SidebarItem to="/properties" icon={Building2} label="Imóveis" />
-                  <SidebarItem to="/crm" icon={Users} label="CRM & Pipeline" />
+                  <SidebarItem to="/crm" icon={Users} label="CRM" />
                   
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Sistema</div>
                   

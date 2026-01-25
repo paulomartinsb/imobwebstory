@@ -344,44 +344,47 @@ export const AdminPage: React.FC = () => {
 -- TABELAS DO SISTEMA GOLDIMOB AI
 -- Execute este script no SQL Editor do Supabase para criar a estrutura completa.
 
+-- Extensão para geração de UUIDs
+create extension if not exists "uuid-ossp";
+
 -- 1. Imóveis
 create table if not exists properties (
-  id text primary key,
+  id text primary key default uuid_generate_v4(),
   content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 2. Clientes / Leads
 create table if not exists clients (
-  id text primary key,
+  id text primary key default uuid_generate_v4(),
   content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 3. Usuários
 create table if not exists users (
-  id text primary key,
+  id text primary key default uuid_generate_v4(),
   content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 4. Pipelines
 create table if not exists pipelines (
-  id text primary key,
+  id text primary key default uuid_generate_v4(),
   content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 5. Logs
 create table if not exists logs (
-  id text primary key,
+  id text primary key default uuid_generate_v4(),
   content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
 -- 6. Configurações Globais (Prompts, Listas, Regras)
 create table if not exists system_settings (
-  id text primary key,
+  id text primary key default uuid_generate_v4(),
   content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
@@ -424,7 +427,7 @@ create policy "Public Access Logs" on logs for all using (true) with check (true
 create policy "Public Access Settings" on system_settings for all using (true) with check (true);
       `;
       navigator.clipboard.writeText(sql);
-      addNotification('success', 'SQL Completo (com Configurações e Prompts) copiado!');
+      addNotification('success', 'SQL Completo (com geração de IDs) copiado!');
   };
 
   const roleOptions: { value: UserRole; label: string }[] = [
@@ -500,7 +503,7 @@ create policy "Public Access Settings" on system_settings for all using (true) w
               <div className="flex items-center gap-2"><Building2 size={18} /> Imóveis</div>
           </button>
           <button onClick={() => setActiveTab('crm')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'crm' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><Megaphone size={18} /> CRM & Leads</div>
+              <div className="flex items-center gap-2"><Megaphone size={18} /> CRM</div>
           </button>
           <button onClick={() => setActiveTab('logs')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'logs' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               <div className="flex items-center gap-2"><FileText size={18} /> Logs de Auditoria</div>
@@ -606,7 +609,7 @@ create policy "Public Access Settings" on system_settings for all using (true) w
                       />
                       <Input 
                         label="Email" 
-                        type="email"
+                        type="email" 
                         placeholder="Ex: maria@imob.com" 
                         value={newUser.email}
                         onChange={e => setNewUser({...newUser, email: e.target.value})}
