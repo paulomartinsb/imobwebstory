@@ -251,6 +251,7 @@ const calculateNextVisit = (visits: Visit[]): string | undefined => {
     return futureVisits.length > 0 ? futureVisits[0].date : undefined;
 }
 
+// Robust Env Getter
 const getEnv = (key: string) => {
     try {
         // @ts-ignore
@@ -262,13 +263,17 @@ const getEnv = (key: string) => {
 
 // REAL-TIME SYNC HELPER WITH ENV FALLBACK
 const syncToCloud = (settings: SystemSettings, table: string, data: any, isDelete = false) => {
+    // 1. Try to get from State
     let { supabaseUrl, supabaseAnonKey } = settings;
     
-    // FALLBACK: If settings are empty (cleared cache), try to read from env
+    // 2. Fallback to Env if state is empty (Critical for post-clear-cache behavior)
     if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
     if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
 
-    if (!supabaseUrl || !supabaseAnonKey) return; 
+    if (!supabaseUrl || !supabaseAnonKey) {
+        console.warn('Sync aborted: Missing Supabase Credentials');
+        return; 
+    }
 
     // Fire and forget (don't await) to update UI immediately
     if (isDelete) {
@@ -297,9 +302,9 @@ export const useStore = create<AppState>()(
           matchAiPrompt: DEFAULT_MATCH_PROMPT,
           crmGlobalInsightsPrompt: DEFAULT_CRM_GLOBAL_PROMPT,
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
-          // Default API Key
+          // Default API Key (Try env first)
           geminiApiKey: getEnv('VITE_GEMINI_API_KEY') || '',
-          // Default Supabase config with provided credentials
+          // Default Supabase config (Try env first)
           supabaseUrl: getEnv('VITE_SUPABASE_URL') || '',
           supabaseAnonKey: getEnv('VITE_SUPABASE_ANON_KEY') || '',
           // Default Lead Aging Config
@@ -321,67 +326,77 @@ export const useStore = create<AppState>()(
       // --- SUPABASE SYNC ACTION ---
       loadFromSupabase: async () => {
           const state = get();
-          let { supabaseUrl, supabaseAnonKey } = state.systemSettings;
+          
+          // 1. RESOLVE CREDENTIALS ROBUSTLY
+          // Try local state first, but immediately fallback to ENV if missing.
+          // This fixes the "Clear Cache = Broken App" issue.
+          const envUrl = getEnv('VITE_SUPABASE_URL');
+          const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
+          
+          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl;
+          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey;
 
-          // FALLBACK: Strict check for Env Vars if store is empty
-          if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
-          if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
+          if (!supabaseUrl || !supabaseAnonKey) {
+              console.error("loadFromSupabase: No Credentials found in State or Env.");
+              return;
+          }
 
-          if (!supabaseUrl || !supabaseAnonKey) return;
+          // 2. FETCH SYSTEM SETTINGS FIRST (Prioritize Global Configuration)
+          const settingsRes = await fetchEntitiesFromSupabase('system_settings', supabaseUrl, supabaseAnonKey);
+          
+          if (settingsRes.data && settingsRes.data.length > 0) {
+              const cloudSettings = settingsRes.data.find((s: any) => s.id === 'global-settings');
+              if (cloudSettings) {
+                  // Merge cloud settings but PRESERVE ENV KEYS if cloud is empty on keys
+                  const mergedSettings = {
+                      ...state.systemSettings,
+                      ...cloudSettings,
+                      // Ensure we don't overwrite valid env/local keys with empty strings from a bad DB entry
+                      supabaseUrl: cloudSettings.supabaseUrl || supabaseUrl,
+                      supabaseAnonKey: cloudSettings.supabaseAnonKey || supabaseAnonKey,
+                      geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || ''
+                  };
+                  
+                  // Update state immediately so subsequent fetches use correct config if needed
+                  set({ systemSettings: mergedSettings });
+                  console.log("Configurações Globais carregadas do Supabase.");
+              }
+          }
 
-          // Fetch all entities in parallel, including system settings
-          const [usersRes, propsRes, clientsRes, pipeRes, logsRes, settingsRes] = await Promise.all([
+          // 3. FETCH DATA ENTITIES
+          const [usersRes, propsRes, clientsRes, pipeRes, logsRes] = await Promise.all([
               fetchEntitiesFromSupabase('users', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('properties', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('clients', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('pipelines', supabaseUrl, supabaseAnonKey),
-              fetchEntitiesFromSupabase('logs', supabaseUrl, supabaseAnonKey),
-              fetchEntitiesFromSupabase('system_settings', supabaseUrl, supabaseAnonKey)
+              fetchEntitiesFromSupabase('logs', supabaseUrl, supabaseAnonKey)
           ]);
 
           const updates: Partial<AppState> = {};
           let hasUpdates = false;
 
-          // Only update if we got data back (avoid wiping local state if offline/error)
+          // Only update if we got data back to avoid wiping if offline
           if (usersRes.data && usersRes.data.length > 0) { updates.users = usersRes.data; hasUpdates = true; }
           if (propsRes.data && propsRes.data.length > 0) { updates.properties = propsRes.data; hasUpdates = true; }
           if (clientsRes.data && clientsRes.data.length > 0) { updates.clients = clientsRes.data; hasUpdates = true; }
           if (pipeRes.data && pipeRes.data.length > 0) { updates.pipelines = pipeRes.data; hasUpdates = true; }
           if (logsRes.data && logsRes.data.length > 0) { updates.logs = logsRes.data; hasUpdates = true; }
-          
-          // Hydrate System Settings from Cloud
-          if (settingsRes.data && settingsRes.data.length > 0) {
-              const cloudSettings = settingsRes.data.find((s: any) => s.id === 'global-settings');
-              if (cloudSettings) {
-                  // Merge carefuly to not lose local auth/keys if cloud is empty on keys
-                  updates.systemSettings = {
-                      ...state.systemSettings,
-                      ...cloudSettings,
-                      // Preserve Keys if cloud is empty but local/env has them
-                      supabaseUrl: cloudSettings.supabaseUrl || state.systemSettings.supabaseUrl,
-                      supabaseAnonKey: cloudSettings.supabaseAnonKey || state.systemSettings.supabaseAnonKey,
-                      geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey
-                  };
-                  // Remove ID from settings object structure if it leaked in
-                  // @ts-ignore
-                  delete updates.systemSettings.id;
-                  hasUpdates = true;
-              }
-          }
 
           if (hasUpdates) {
               set(updates);
-              console.log("Estado sincronizado com Supabase (Incluindo Configurações):", updates);
+              console.log("Dados Operacionais sincronizados do Supabase.");
           }
       },
 
       subscribeToRealtime: () => {
           const state = get();
-          let { supabaseUrl, supabaseAnonKey } = state.systemSettings;
           
-          // FALLBACK
-          if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
-          if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
+          // 1. RESOLVE CREDENTIALS ROBUSTLY
+          const envUrl = getEnv('VITE_SUPABASE_URL');
+          const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
+          
+          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl;
+          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey;
 
           if (!supabaseUrl || !supabaseAnonKey) return;
 
@@ -426,8 +441,16 @@ export const useStore = create<AppState>()(
                   } else if (table === 'system_settings') {
                       // Only care about the global settings row
                       if (data.id === 'global-settings') {
-                          updates.systemSettings = { ...current.systemSettings, ...data };
-                          delete updates.systemSettings.id; // Cleanup
+                          // Prevent overwriting keys with nulls if update is partial
+                          updates.systemSettings = { 
+                              ...current.systemSettings, 
+                              ...data,
+                              supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
+                              supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey
+                          };
+                          // Remove structural ID
+                          // @ts-ignore
+                          delete updates.systemSettings.id;
                       }
                   }
 

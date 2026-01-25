@@ -35,41 +35,14 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function App() {
-  const { currentUser, loadFromSupabase, subscribeToRealtime, systemSettings, updateSystemSettings } = useStore();
+  const { currentUser, loadFromSupabase, subscribeToRealtime } = useStore();
 
   // Load cloud data on mount
   useEffect(() => {
-      // FIX for "Local DB" stuck issue and Credentials Loss:
-      const getEnv = (key: string) => {
-          try {
-              // @ts-ignore
-              return import.meta.env?.[key];
-          } catch (e) {
-              return undefined;
-          }
-      };
-
-      const envSupabaseUrl = getEnv('VITE_SUPABASE_URL');
-      const envSupabaseKey = getEnv('VITE_SUPABASE_ANON_KEY');
-      const envGeminiKey = getEnv('VITE_GEMINI_API_KEY');
-
-      // If env vars exist but store is empty (e.g. cleared cache), hydrate from env
-      if ((!systemSettings.supabaseUrl && envSupabaseUrl) || (!systemSettings.geminiApiKey && envGeminiKey)) {
-          console.log("Detectadas variáveis de ambiente. Restaurando credenciais...");
-          updateSystemSettings({
-              supabaseUrl: envSupabaseUrl || systemSettings.supabaseUrl,
-              supabaseAnonKey: envSupabaseKey || systemSettings.supabaseAnonKey,
-              geminiApiKey: envGeminiKey || systemSettings.geminiApiKey
-          });
-          // Small delay to ensure state updates before loading from cloud
-          setTimeout(() => {
-              loadFromSupabase();
-              subscribeToRealtime();
-          }, 500);
-      } else {
-          loadFromSupabase();
-          subscribeToRealtime();
-      }
+      // The store now handles Env fallback robustly inside loadFromSupabase
+      // We don't need complex checks here anymore.
+      loadFromSupabase();
+      subscribeToRealtime();
   }, []);
 
   // Helper to determine the "Home" page based on role
