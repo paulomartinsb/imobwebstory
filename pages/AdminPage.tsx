@@ -815,14 +815,14 @@ create policy "Public Access Logs" on logs for all using (true) with check (true
                                     onClick={handleSeedDatabase}
                                     isLoading={isSyncing}
                                   >
-                                      <UploadCloud size={18} /> Enviar (Backup Local -> Nuvem)
+                                      <UploadCloud size={18} /> Enviar (Backup Local &rarr; Nuvem)
                                   </Button>
                                   <Button 
                                     className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20" 
                                     onClick={handlePullDatabase}
                                     isLoading={isSyncing}
                                   >
-                                      <DownloadCloud size={18} /> Baixar (Restaurar Nuvem -> Local)
+                                      <DownloadCloud size={18} /> Baixar (Restaurar Nuvem &rarr; Local)
                                   </Button>
                               </div>
                           </div>
