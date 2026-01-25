@@ -4,38 +4,51 @@ import { Card, Input, Badge, Button, PhoneInput } from '../components/ui/Element
 import { 
     Search, MessageCircle, Mail, Phone, Share2, 
     Trash2, X, Filter, User, Plus, Save, DollarSign, MapPin, Bed, Ruler,
-    Bath, Car, Loader2, Edit3
+    Bath, Car, Loader2, Edit3, Eye, Clock, FileText, CheckCircle, Calendar, Shield, Tag, Building
 } from 'lucide-react';
-import { Client, LeadSource, PropertyType } from '../types';
+import { Client, LeadSource, DetailedInterestProfile, LogEntry } from '../types';
 import { searchCep } from '../services/viaCep';
 
 export const LeadsPage: React.FC = () => {
-    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines } = useStore();
+    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines, users, logs } = useStore();
     const [searchText, setSearchText] = useState('');
-    const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+    const [selectedClient, setSelectedClient] = useState<Client | null>(null); // For Quick Actions
+    const [viewClient, setViewClient] = useState<Client | null>(null); // For Detail Modal
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
     const [filterSource, setFilterSource] = useState<string>('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
 
-    // New Lead Form State
-    const [newLeadData, setNewLeadData] = useState({
+    // Initial State for Detailed Form
+    const initialFormState = {
         name: '',
         phone: '',
         email: '',
         source: 'Manual / Balcão' as LeadSource,
-        notes: '',
-        // Interest Fields
-        budget: '',
-        interest: [] as string[],
-        location: '', // Used for text input
-        locations: [] as string[], // Used for tags/list
-        minBedrooms: '',
-        minBathrooms: '',
-        minParking: '',
-        minArea: ''
-    });
+        ownerId: '',
+        interestProfile: {
+            propertyTypes: [] as string[],
+            condition: 'indiferente',
+            usage: 'moradia',
+            cities: [] as string[],
+            neighborhoods: [] as string[],
+            proximityTo: [] as string[],
+            minBedrooms: 0,
+            minSuites: 0,
+            minParking: 0,
+            minArea: 0,
+            mustHaveFeatures: [] as string[],
+            maxPrice: 0,
+            paymentMethod: 'vista',
+            hasFgts: false,
+            sunOrientation: 'indiferente',
+            floorPreference: 'indiferente',
+            notes: ''
+        } as DetailedInterestProfile
+    };
 
+    const [newLeadData, setNewLeadData] = useState(initialFormState);
+    const [locationInput, setLocationInput] = useState('');
     const [cepInput, setCepInput] = useState('');
     const [isCepLoading, setIsCepLoading] = useState(false);
 
@@ -105,42 +118,53 @@ export const LeadsPage: React.FC = () => {
             phone: client.phone,
             email: client.email,
             source: client.source as LeadSource,
-            notes: client.notes || '',
-            budget: client.budget ? String(client.budget) : '',
-            interest: client.interest || [],
-            location: '',
-            locations: client.desiredLocation || [],
-            minBedrooms: client.minBedrooms ? String(client.minBedrooms) : '',
-            minBathrooms: client.minBathrooms ? String(client.minBathrooms) : '',
-            minParking: client.minParking ? String(client.minParking) : '',
-            minArea: client.minArea ? String(client.minArea) : ''
+            ownerId: client.ownerId,
+            interestProfile: client.interestProfile || {
+                propertyTypes: client.interest || [],
+                condition: 'indiferente',
+                usage: 'moradia',
+                cities: [],
+                neighborhoods: client.desiredLocation || [],
+                proximityTo: [],
+                minBedrooms: client.minBedrooms || 0,
+                minSuites: client.minBathrooms || 0, // Fallback mapping
+                minParking: client.minParking || 0,
+                minArea: client.minArea || 0,
+                mustHaveFeatures: client.desiredFeatures || [],
+                maxPrice: client.budget || 0,
+                paymentMethod: 'vista',
+                hasFgts: false,
+                sunOrientation: 'indiferente',
+                floorPreference: 'indiferente',
+                notes: client.notes || ''
+            }
         });
         setEditingId(client.id);
         setIsAddModalOpen(true);
     };
 
-    const toggleInterest = (type: string) => {
+    const toggleProfileList = (field: keyof DetailedInterestProfile, value: string) => {
         setNewLeadData(prev => {
-            const current = prev.interest;
-            if (current.includes(type)) return { ...prev, interest: current.filter(t => t !== type) };
-            return { ...prev, interest: [...current, type] };
+            const list = prev.interestProfile[field] as string[];
+            const newList = list.includes(value) ? list.filter(i => i !== value) : [...list, value];
+            return { ...prev, interestProfile: { ...prev.interestProfile, [field]: newList } };
         });
-    }
+    };
 
     const addLocation = () => {
-        if (newLeadData.location.trim()) {
-            setNewLeadData(prev => ({ 
-                ...prev, 
-                locations: [...prev.locations, prev.location.trim()],
-                location: '' 
-            }));
+        if (locationInput.trim()) {
+            toggleProfileList('neighborhoods', locationInput.trim());
+            setLocationInput('');
         }
     }
 
     const removeLocation = (loc: string) => {
         setNewLeadData(prev => ({
             ...prev,
-            locations: prev.locations.filter(l => l !== loc)
+            interestProfile: {
+                ...prev.interestProfile,
+                neighborhoods: prev.interestProfile.neighborhoods.filter(l => l !== loc)
+            }
         }));
     }
 
@@ -154,7 +178,16 @@ export const LeadsPage: React.FC = () => {
         
         if (data && !data.erro) {
             const loc = `${data.localidade} - ${data.bairro}`;
-            setNewLeadData(prev => ({ ...prev, locations: [...prev.locations, loc] }));
+            // Add to neighborhoods list directly
+            if(!newLeadData.interestProfile.neighborhoods.includes(loc)) {
+                setNewLeadData(prev => ({
+                    ...prev,
+                    interestProfile: {
+                        ...prev.interestProfile,
+                        neighborhoods: [...prev.interestProfile.neighborhoods, loc]
+                    }
+                }));
+            }
             addNotification('success', 'Localização adicionada!');
             setCepInput('');
         } else {
@@ -170,14 +203,21 @@ export const LeadsPage: React.FC = () => {
             phone: newLeadData.phone,
             email: newLeadData.email,
             source: newLeadData.source,
-            budget: Number(newLeadData.budget) || 0,
-            interest: newLeadData.interest,
-            desiredLocation: newLeadData.locations,
-            minBedrooms: Number(newLeadData.minBedrooms) || 0,
-            minBathrooms: Number(newLeadData.minBathrooms) || 0,
-            minParking: Number(newLeadData.minParking) || 0,
-            minArea: Number(newLeadData.minArea) || 0,
-            notes: newLeadData.notes
+            ownerId: newLeadData.ownerId || currentUser?.id || '',
+            
+            // Detailed Profile
+            interestProfile: newLeadData.interestProfile,
+
+            // Legacy/Root Fields Mapping (For table view & simple filters)
+            budget: newLeadData.interestProfile.maxPrice || 0,
+            interest: newLeadData.interestProfile.propertyTypes || [],
+            desiredLocation: newLeadData.interestProfile.neighborhoods || [],
+            minBedrooms: newLeadData.interestProfile.minBedrooms || 0,
+            minBathrooms: newLeadData.interestProfile.minSuites || 0,
+            minParking: newLeadData.interestProfile.minParking || 0,
+            minArea: newLeadData.interestProfile.minArea || 0,
+            desiredFeatures: newLeadData.interestProfile.mustHaveFeatures || [],
+            notes: newLeadData.interestProfile.notes
         };
 
         if (editingId) {
@@ -202,21 +242,18 @@ export const LeadsPage: React.FC = () => {
 
         setIsAddModalOpen(false);
         setEditingId(null);
-        setNewLeadData({ 
-            name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
-            budget: '', interest: [], location: '', locations: [], minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
-        });
+        setNewLeadData(initialFormState);
         setCepInput('');
     };
 
     const handleOpenAddModal = () => {
         setEditingId(null);
-        setNewLeadData({ 
-            name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
-            budget: '', interest: [], location: '', locations: [], minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
-        });
+        setNewLeadData(initialFormState);
         setIsAddModalOpen(true);
     }
+
+    // Helper for View Modal
+    const getInterestLabel = (val: string) => systemSettings.propertyTypes.find(t => t.value === val)?.label || val;
 
     return (
         <div className="space-y-6">
@@ -264,7 +301,7 @@ export const LeadsPage: React.FC = () => {
                     <table className="w-full text-left text-sm text-slate-600">
                         <thead className="bg-slate-50 text-slate-700 font-semibold uppercase text-xs">
                             <tr>
-                                <th className="px-6 py-4">Nome</th>
+                                <th className="px-6 py-4">Nome / Responsável</th>
                                 <th className="px-6 py-4">Contato</th>
                                 <th className="px-6 py-4">Origem</th>
                                 <th className="px-6 py-4">Status / Pipeline</th>
@@ -272,66 +309,87 @@ export const LeadsPage: React.FC = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                            {filteredClients.map(client => (
-                                <tr key={client.id} className="hover:bg-slate-50 transition-colors">
-                                    <td className="px-6 py-4">
-                                        <div className="font-medium text-slate-800 flex items-center gap-2">
-                                            <User size={16} className="text-slate-400" />
-                                            {client.name}
-                                        </div>
-                                        <div className="text-xs text-slate-400 mt-1">Cadastrado em: {new Date(client.createdAt).toLocaleDateString()}</div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <div className="flex items-center gap-2 text-slate-700">
-                                            <Phone size={14} className="text-slate-400"/> {client.phone}
-                                        </div>
-                                        <div className="flex items-center gap-2 text-slate-500 text-xs mt-1">
-                                            <Mail size={14} className="text-slate-400"/> {client.email}
-                                        </div>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        <Badge color="blue">{client.source}</Badge>
-                                    </td>
-                                    <td className="px-6 py-4">
-                                        {client.pipelineId ? (
-                                            <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full w-fit">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                                                No Pipeline
-                                            </span>
-                                        ) : (
-                                            <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full w-fit">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
-                                                Banco de Leads
-                                            </span>
-                                        )}
-                                    </td>
-                                    <td className="px-6 py-4 text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <button 
-                                                onClick={() => openActionModal(client)}
-                                                className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
-                                                title="Contatar"
-                                            >
-                                                <MessageCircle size={18} />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleEditClick(client)}
-                                                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-                                                title="Editar"
-                                            >
-                                                <Edit3 size={18} />
-                                            </button>
-                                            <button 
-                                                onClick={() => handleDelete(client.id)}
-                                                className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                                                title="Excluir"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    </td>
-                                </tr>
-                            ))}
+                            {filteredClients.map(client => {
+                                const owner = users.find(u => u.id === client.ownerId);
+                                return (
+                                    <tr key={client.id} className="hover:bg-slate-50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="font-medium text-slate-800 flex items-center gap-2">
+                                                <User size={16} className="text-slate-400" />
+                                                {client.name}
+                                            </div>
+                                            
+                                            <div className="text-xs text-slate-400 mt-1">
+                                                Cadastrado em: {new Date(client.createdAt).toLocaleDateString()}
+                                            </div>
+
+                                            {/* OWNER VISUALIZATION FOR ADMINS/STAFF */}
+                                            {owner && (currentUser?.role === 'admin' || currentUser?.role === 'finance' || currentUser?.role === 'employee') && (
+                                                <div className="flex items-center gap-1.5 mt-2 text-xs font-medium text-indigo-600 bg-indigo-50 w-fit px-2 py-0.5 rounded border border-indigo-100">
+                                                    <Shield size={10} />
+                                                    {owner.name}
+                                                </div>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2 text-slate-700">
+                                                <Phone size={14} className="text-slate-400"/> {client.phone}
+                                            </div>
+                                            <div className="flex items-center gap-2 text-slate-500 text-xs mt-1">
+                                                <Mail size={14} className="text-slate-400"/> {client.email}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <Badge color="blue">{client.source}</Badge>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {client.pipelineId ? (
+                                                <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full w-fit">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                                                    No Pipeline
+                                                </span>
+                                            ) : (
+                                                <span className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full w-fit">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-400"></div>
+                                                    Banco de Leads
+                                                </span>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <button 
+                                                    onClick={() => setViewClient(client)}
+                                                    className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                                                    title="Visualizar Perfil e Histórico"
+                                                >
+                                                    <Eye size={18} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => openActionModal(client)}
+                                                    className="p-2 text-primary-600 hover:bg-primary-50 rounded-lg transition-colors"
+                                                    title="Contatar"
+                                                >
+                                                    <MessageCircle size={18} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleEditClick(client)}
+                                                    className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                                    title="Editar"
+                                                >
+                                                    <Edit3 size={18} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleDelete(client.id)}
+                                                    className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="Excluir"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )
+                            })}
                             {filteredClients.length === 0 && (
                                 <tr>
                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
@@ -381,10 +439,166 @@ export const LeadsPage: React.FC = () => {
                 </div>
             )}
 
-            {/* Add/Edit Lead Modal */}
+            {/* DETAIL & HISTORY MODAL (IMPROVED) */}
+            {viewClient && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl sticky top-0 z-10">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center">
+                                    <User size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-slate-800">{viewClient.name}</h2>
+                                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                                        <Clock size={12} />
+                                        Criado em {new Date(viewClient.createdAt).toLocaleDateString()}
+                                    </div>
+                                </div>
+                            </div>
+                            <button onClick={() => setViewClient(null)} className="text-slate-400 hover:text-slate-600">
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 overflow-y-auto">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {/* Left Column: Info */}
+                                <div className="space-y-6 md:col-span-2">
+                                    {/* Contact & Owner */}
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase">Email</label>
+                                            <div className="text-sm font-medium text-slate-700">{viewClient.email || '-'}</div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase">Telefone</label>
+                                            <div className="text-sm font-medium text-slate-700">{viewClient.phone || '-'}</div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase">Origem</label>
+                                            <div className="text-sm font-medium text-slate-700">{viewClient.source}</div>
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-slate-400 uppercase">Responsável</label>
+                                            <div className="text-sm font-medium text-indigo-700 flex items-center gap-1">
+                                                {users.find(u => u.id === viewClient.ownerId)?.name || 'Desconhecido'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Detailed Interests */}
+                                    <div>
+                                        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
+                                            <MapPin size={16} className="text-primary-500"/>
+                                            Perfil de Interesse Completo
+                                        </h3>
+                                        <div className="border border-slate-200 rounded-xl p-4 space-y-4">
+                                            
+                                            {/* Tags Row */}
+                                            <div className="flex flex-wrap gap-2">
+                                                {viewClient.interestProfile?.usage && (
+                                                    <span className="px-2 py-1 bg-purple-50 text-purple-700 text-xs rounded border border-purple-100 capitalize font-medium flex items-center gap-1">
+                                                        <Building size={12}/> {viewClient.interestProfile.usage}
+                                                    </span>
+                                                )}
+                                                {viewClient.interestProfile?.condition !== 'indiferente' && (
+                                                    <span className="px-2 py-1 bg-amber-50 text-amber-700 text-xs rounded border border-amber-100 capitalize font-medium">
+                                                        {viewClient.interestProfile?.condition}
+                                                    </span>
+                                                )}
+                                                {viewClient.interest.map(i => (
+                                                    <span key={i} className="px-2 py-1 bg-slate-100 text-slate-600 text-xs rounded border border-slate-200 capitalize">{getInterestLabel(i)}</span>
+                                                ))}
+                                                {viewClient.desiredLocation.map(l => (
+                                                    <span key={l} className="px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-100">{l}</span>
+                                                ))}
+                                            </div>
+
+                                            {/* Metrics Row */}
+                                            <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                                <span className="flex items-center gap-1 font-bold text-emerald-600"><DollarSign size={14}/> Até {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact' }).format(viewClient.budget)}</span>
+                                                {viewClient.minBedrooms && <span className="flex items-center gap-1"><Bed size={14}/> {viewClient.minBedrooms}+ Qtos</span>}
+                                                {viewClient.minBathrooms && <span className="flex items-center gap-1"><Bath size={14}/> {viewClient.minBathrooms}+ Banh</span>}
+                                                {viewClient.minParking && <span className="flex items-center gap-1"><Car size={14}/> {viewClient.minParking}+ Vagas</span>}
+                                                {viewClient.minArea && <span className="flex items-center gap-1"><Ruler size={14}/> {viewClient.minArea}m²+</span>}
+                                            </div>
+
+                                            {/* Features Row */}
+                                            {(viewClient.interestProfile?.mustHaveFeatures?.length || 0) > 0 && (
+                                                <div>
+                                                    <p className="text-xs font-semibold text-slate-500 mb-2 uppercase">Diferenciais Buscados</p>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {viewClient.interestProfile?.mustHaveFeatures?.map((f, i) => (
+                                                            <span key={i} className="text-xs bg-white border border-slate-200 px-2 py-1 rounded-full text-slate-600 flex items-center gap-1">
+                                                                <Tag size={10} /> {f}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Notes */}
+                                            {viewClient.notes && (
+                                                <div className="mt-2 text-sm text-slate-500 italic bg-slate-50 p-3 rounded border-l-2 border-slate-300">
+                                                    "{viewClient.notes}"
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right Column: History (Logs) */}
+                                <div className="border-l border-slate-100 pl-6 md:col-span-1 h-full">
+                                    <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-4">
+                                        <FileText size={16} className="text-primary-500"/>
+                                        Histórico de Atividades
+                                    </h3>
+                                    
+                                    <div className="space-y-6 relative before:absolute before:inset-0 before:ml-2.5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-slate-200 before:content-['']">
+                                        {logs.filter(l => l.entityId === viewClient.id).length === 0 && (
+                                            <div className="text-xs text-slate-400 pl-6 italic">Sem histórico registrado.</div>
+                                        )}
+                                        
+                                        {logs
+                                            .filter(l => l.entityId === viewClient.id)
+                                            .sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+                                            .map(log => (
+                                                <div key={log.id} className="relative pl-6">
+                                                    <div className="absolute left-0 top-1 w-5 h-5 bg-white border-2 border-primary-500 rounded-full z-10 flex items-center justify-center">
+                                                        <div className="w-2 h-2 bg-primary-500 rounded-full"></div>
+                                                    </div>
+                                                    <div className="flex flex-col">
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">
+                                                            {new Date(log.timestamp).toLocaleDateString()} • {new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                                        </span>
+                                                        <span className="text-xs font-semibold text-slate-700 mt-0.5">
+                                                            {log.action === 'create' ? 'Lead Criado' : log.action === 'update' ? 'Atualização' : log.action}
+                                                        </span>
+                                                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                                                            {log.details}
+                                                        </p>
+                                                        <span className="text-[10px] text-slate-400 mt-1">Por: {log.userName}</span>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50 rounded-b-2xl">
+                            <Button onClick={() => setViewClient(null)} variant="outline">Fechar</Button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add/Edit Lead Modal - UPDATED TO FULL PROFILE */}
             {isAddModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl sticky top-0 z-10">
                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                                 {editingId ? <Edit3 size={20} className="text-primary-600"/> : <Plus size={20} className="text-primary-600"/>} 
@@ -394,9 +608,11 @@ export const LeadsPage: React.FC = () => {
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleSaveLead} className="p-6 space-y-5">
-                            {/* Basic Info */}
+                        <form onSubmit={handleSaveLead} className="p-6 space-y-6">
+                            
+                            {/* SECTION 1: CONTACT */}
                             <div className="space-y-4">
+                                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Dados do Contato</h3>
                                 <Input 
                                     label="Nome Completo" 
                                     required 
@@ -405,7 +621,7 @@ export const LeadsPage: React.FC = () => {
                                 />
                                 <div className="grid grid-cols-2 gap-4">
                                     <PhoneInput 
-                                        label="Telefone"
+                                        label="Telefone / WhatsApp"
                                         required
                                         value={newLeadData.phone}
                                         onChange={e => setNewLeadData({...newLeadData, phone: e.target.value})}
@@ -418,7 +634,7 @@ export const LeadsPage: React.FC = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="text-sm font-medium text-slate-700 block mb-1">Origem</label>
+                                    <label className="text-sm font-medium text-slate-700 block mb-1">Origem do Lead</label>
                                     <select 
                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
                                         value={newLeadData.source}
@@ -431,71 +647,39 @@ export const LeadsPage: React.FC = () => {
                                 </div>
                             </div>
 
-                            <div className="h-px bg-slate-100 my-2"></div>
-
-                            {/* Interest Profile */}
-                            <div className="space-y-4">
-                                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-2">Perfil de Interesse</h3>
+                            {/* SECTION 2: INTEREST PROFILE */}
+                            <div className="space-y-5">
+                                <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Perfil de Interesse Detalhado</h3>
                                 
-                                {/* Budget */}
-                                <div>
-                                    <label className="text-sm font-medium text-slate-700 flex items-center gap-1 mb-1"><DollarSign size={14} /> Orçamento Máximo</label>
+                                <div className="grid grid-cols-2 gap-4">
                                     <Input 
-                                        type="number"
-                                        placeholder="R$ 0,00"
-                                        value={newLeadData.budget}
-                                        onChange={e => setNewLeadData({...newLeadData, budget: e.target.value})}
+                                        label="Orçamento Máximo (R$)" 
+                                        type="number" 
+                                        value={newLeadData.interestProfile.maxPrice} 
+                                        onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, maxPrice: Number(e.target.value) } })} 
                                     />
-                                </div>
-
-                                {/* Location with CEP & Datalist */}
-                                <div className="space-y-1">
-                                    <label className="text-sm font-medium text-slate-700 flex items-center gap-1"><MapPin size={14} /> Localização Desejada</label>
-                                    <div className="flex gap-2 mb-2">
-                                        <div className="w-1/3 relative">
-                                            <Input 
-                                                placeholder="CEP"
-                                                value={cepInput}
-                                                onChange={e => setCepInput(e.target.value)}
-                                                onBlur={handleCepSearch} // Search on blur too for convenience
-                                                maxLength={9}
-                                            />
-                                            {isCepLoading && <Loader2 className="absolute right-3 top-2.5 animate-spin text-primary-600" size={16} />}
-                                        </div>
-                                        <div className="w-2/3 flex gap-1">
-                                            <input 
-                                                placeholder="Bairro ou Cidade..."
-                                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
-                                                list="lead-locations-list"
-                                                value={newLeadData.location}
-                                                onChange={e => setNewLeadData({...newLeadData, location: e.target.value})}
-                                                onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); addLocation(); }}}
-                                            />
-                                            <datalist id="lead-locations-list">
-                                                {systemSettings.availableLocations.map((loc, i) => <option key={i} value={loc} />)}
-                                            </datalist>
-                                            <Button type="button" onClick={addLocation} variant="secondary" className="px-3"><Plus size={16}/></Button>
-                                        </div>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {newLeadData.locations.map((loc, i) => (
-                                            <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded text-xs flex items-center gap-1">
-                                                {loc} <button type="button" onClick={() => removeLocation(loc)}><X size={12}/></button>
-                                            </span>
-                                        ))}
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 block mb-1">Finalidade</label>
+                                        <select 
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" 
+                                            value={newLeadData.interestProfile.usage} 
+                                            onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, usage: e.target.value as any } })}
+                                        >
+                                            <option value="moradia">Moradia</option>
+                                            <option value="investimento">Investimento</option>
+                                        </select>
                                     </div>
                                 </div>
 
-                                {/* Property Types */}
                                 <div>
                                     <label className="text-sm font-medium text-slate-700 block mb-2">Tipos de Imóvel</label>
                                     <div className="flex flex-wrap gap-2">
                                         {systemSettings.propertyTypes.map(t => (
                                             <button 
+                                                type="button" 
                                                 key={t.value} 
-                                                type="button"
-                                                onClick={() => toggleInterest(t.value)}
-                                                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors ${newLeadData.interest.includes(t.value) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                                                onClick={() => toggleProfileList('propertyTypes', t.value)} 
+                                                className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${newLeadData.interestProfile.propertyTypes.includes(t.value) ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600 border-slate-200'}`}
                                             >
                                                 {t.label}
                                             </button>
@@ -503,37 +687,67 @@ export const LeadsPage: React.FC = () => {
                                     </div>
                                 </div>
 
-                                {/* Detailed Specs Grid */}
-                                <div className="grid grid-cols-4 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                    <div className="col-span-1 space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Bed size={10} /> Quartos</label>
-                                        <Input type="number" className="bg-white" value={newLeadData.minBedrooms} onChange={e => setNewLeadData({...newLeadData, minBedrooms: e.target.value})} />
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 block mb-2">Localização (Bairros/Cidades)</label>
+                                    <div className="flex gap-2 mb-2">
+                                        <div className="w-1/3 relative">
+                                            <Input 
+                                                placeholder="CEP"
+                                                value={cepInput}
+                                                onChange={e => setCepInput(e.target.value)}
+                                                onBlur={handleCepSearch}
+                                                maxLength={9}
+                                                className="text-sm"
+                                            />
+                                            {isCepLoading && <Loader2 className="absolute right-3 top-2.5 animate-spin text-primary-600" size={16} />}
+                                        </div>
+                                        <div className="w-2/3 flex gap-1">
+                                            <input 
+                                                type="text" 
+                                                list="locations-datalist"
+                                                className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg" 
+                                                placeholder="Digite ou selecione..." 
+                                                value={locationInput} 
+                                                onChange={e => setLocationInput(e.target.value)} 
+                                                onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); addLocation(); }}} 
+                                            />
+                                            <datalist id="locations-datalist">
+                                                {systemSettings.availableLocations.map((loc, i) => <option key={i} value={loc} />)}
+                                            </datalist>
+                                            <Button type="button" onClick={addLocation} variant="secondary" className="px-3"><Plus size={16}/></Button>
+                                        </div>
                                     </div>
-                                    <div className="col-span-1 space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Bath size={10} /> Banh.</label>
-                                        <Input type="number" className="bg-white" value={newLeadData.minBathrooms} onChange={e => setNewLeadData({...newLeadData, minBathrooms: e.target.value})} />
-                                    </div>
-                                    <div className="col-span-1 space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Car size={10} /> Vagas</label>
-                                        <Input type="number" className="bg-white" value={newLeadData.minParking} onChange={e => setNewLeadData({...newLeadData, minParking: e.target.value})} />
-                                    </div>
-                                    <div className="col-span-1 space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Ruler size={10} /> Área</label>
-                                        <Input type="number" className="bg-white" value={newLeadData.minArea} onChange={e => setNewLeadData({...newLeadData, minArea: e.target.value})} />
+                                    <div className="flex flex-wrap gap-2">
+                                        {newLeadData.interestProfile.neighborhoods.map((loc, i) => (
+                                            <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded text-xs flex items-center gap-1">
+                                                {loc} <button type="button" onClick={() => removeLocation(loc)}><X size={12}/></button>
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="h-px bg-slate-100 my-2"></div>
+                                <div className="grid grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                    <div className="col-span-1"><Input label="Min Quartos" type="number" className="bg-white" value={newLeadData.interestProfile.minBedrooms} onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, minBedrooms: Number(e.target.value) } })} /></div>
+                                    <div className="col-span-1"><Input label="Min Banheiros" type="number" className="bg-white" value={newLeadData.interestProfile.minSuites} onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, minSuites: Number(e.target.value) } })} /></div>
+                                    <div className="col-span-1"><Input label="Min Vagas" type="number" className="bg-white" value={newLeadData.interestProfile.minParking} onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, minParking: Number(e.target.value) } })} /></div>
+                                    <div className="col-span-1"><Input label="Min Área (m²)" type="number" className="bg-white" value={newLeadData.interestProfile.minArea} onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, minArea: Number(e.target.value) } })} /></div>
+                                </div>
 
-                            <div>
-                                <label className="text-sm font-medium text-slate-700 block mb-1">Observações Gerais</label>
-                                <textarea 
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20 resize-none"
-                                    placeholder="Ex: Cliente prefere andar alto, sol da manhã..."
-                                    value={newLeadData.notes}
-                                    onChange={e => setNewLeadData({...newLeadData, notes: e.target.value})}
-                                />
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 block mb-2">Diferenciais Buscados</label>
+                                    <div className="flex flex-wrap gap-2">
+                                        {systemSettings.propertyFeatures.map(f => (
+                                            <button type="button" key={f} onClick={() => toggleProfileList('mustHaveFeatures', f)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${newLeadData.interestProfile.mustHaveFeatures.includes(f) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                                {f}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="text-sm font-medium text-slate-700 block mb-1">Observações Gerais</label>
+                                    <textarea className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20" placeholder="Ex: Cliente tem pressa, prefere andar alto..." value={newLeadData.interestProfile.notes} onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, notes: e.target.value } })} />
+                                </div>
                             </div>
 
                             <div className="pt-2 flex justify-end gap-2">

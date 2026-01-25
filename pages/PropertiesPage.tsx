@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal } from 'lucide-react';
+import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History } from 'lucide-react';
 import { generatePropertyDescription } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { Property, PropertyType, PropertyStatus } from '../types';
@@ -75,6 +75,7 @@ export const PropertiesPage: React.FC = () => {
 
   // Derived state: Always fresh from store
   const selectedProperty = properties.find(p => p.id === selectedPropertyId) || null;
+  const editingProperty = editingId ? properties.find(p => p.id === editingId) : null;
 
   // Available Cities for Filter (Unique List)
   const availableCities = useMemo(() => {
@@ -903,6 +904,50 @@ export const PropertiesPage: React.FC = () => {
                         </div>
                         <textarea className="w-full px-4 py-3 rounded-lg border h-32 text-sm" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} />
                     </div>
+
+                    {/* Metadata History Section (Only when editing) */}
+                    {editingProperty && (
+                        <div className="mt-4 pt-4 border-t border-slate-100 bg-slate-50 p-4 rounded-lg">
+                            <h4 className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-3">
+                                <History size={14} /> Histórico do Registro
+                            </h4>
+                            <div className="grid grid-cols-2 gap-4 text-xs">
+                                <div>
+                                    <span className="block text-slate-400">Criado em:</span>
+                                    <span className="font-medium text-slate-700">
+                                        {new Date(editingProperty.createdAt || '').toLocaleString()}
+                                    </span>
+                                    <span className="text-slate-500 ml-1">
+                                        por {users.find(u => u.id === editingProperty.authorId)?.name || 'Desconhecido'}
+                                    </span>
+                                </div>
+                                
+                                {editingProperty.updatedAt && (
+                                    <div>
+                                        <span className="block text-slate-400">Última Edição:</span>
+                                        <span className="font-medium text-slate-700">
+                                            {new Date(editingProperty.updatedAt).toLocaleString()}
+                                        </span>
+                                        <span className="text-slate-500 ml-1">
+                                            por {users.find(u => u.id === editingProperty.updatedBy)?.name || 'Desconhecido'}
+                                        </span>
+                                    </div>
+                                )}
+
+                                {editingProperty.approvedAt && (
+                                    <div className="col-span-2 border-t border-slate-200 pt-2 mt-2">
+                                        <span className="block text-slate-400">Aprovado em:</span>
+                                        <span className="font-medium text-green-700">
+                                            {new Date(editingProperty.approvedAt).toLocaleString()}
+                                        </span>
+                                        <span className="text-slate-500 ml-1">
+                                            por {users.find(u => u.id === editingProperty.approvedBy)?.name || 'Sistema'}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="flex justify-end gap-3 pt-4 border-t">
                         <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>

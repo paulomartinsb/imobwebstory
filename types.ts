@@ -105,6 +105,8 @@ export interface Property {
   status: PropertyStatus;
   images: string[]; // Changed from 'image: string' to support gallery (max 10)
   createdAt?: string; // New field for date filtering
+  updatedAt?: string; // Data da última atualização
+  updatedBy?: string; // ID de quem atualizou
   deletedAt?: string; // Soft delete timestamp
 }
 

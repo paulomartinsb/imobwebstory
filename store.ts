@@ -649,7 +649,12 @@ export const useStore = create<AppState>()(
           const oldProperty = state.properties.find(p => p.id === propertyId);
           if (!oldProperty) return state;
           
-          const enhancedUpdates = { ...updates };
+          const enhancedUpdates = { 
+              ...updates,
+              updatedAt: new Date().toISOString(),
+              updatedBy: state.currentUser?.id
+          };
+          
           if (updates.status === 'pending_approval') {
               // Store submission date when sending for approval (edit or resubmit)
               enhancedUpdates.submittedAt = new Date().toISOString();
@@ -679,7 +684,9 @@ export const useStore = create<AppState>()(
               status: newStatus,
               rejectionReason: reason,
               submittedAt: newStatus === 'pending_approval' ? new Date().toISOString() : oldProperty.submittedAt,
-              approvedAt: newStatus === 'published' ? new Date().toISOString() : oldProperty.approvedAt
+              approvedAt: newStatus === 'published' ? new Date().toISOString() : oldProperty.approvedAt,
+              updatedAt: new Date().toISOString(),
+              updatedBy: state.currentUser?.id
           };
           
           if (newStatus === 'published' && !newProperty.approvedBy) newProperty.approvedBy = state.currentUser?.id;
@@ -711,7 +718,9 @@ export const useStore = create<AppState>()(
               status: 'published' as const, 
               approvedBy: user.id, 
               approvedAt: new Date().toISOString(),
-              rejectionReason: undefined 
+              rejectionReason: undefined,
+              updatedAt: new Date().toISOString(),
+              updatedBy: user.id
           };
 
           const newLog = createLog(user, 'approval', 'property', propertyId, oldProperty.title, 'Imóvel aprovado', oldProperty, newProperty);
@@ -731,7 +740,14 @@ export const useStore = create<AppState>()(
           if (!user || user.role === 'broker') return { notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'Sem permissão para reprovar.' }] };
           const oldProperty = state.properties.find(p => p.id === propertyId);
           if (!oldProperty) return state;
-          const newProperty = { ...oldProperty, status: 'draft' as const, approvedBy: undefined, rejectionReason: reason };
+          const newProperty = { 
+              ...oldProperty, 
+              status: 'draft' as const, 
+              approvedBy: undefined, 
+              rejectionReason: reason,
+              updatedAt: new Date().toISOString(),
+              updatedBy: user.id
+          };
           
           const newLog = createLog(user, 'update', 'property', propertyId, oldProperty.title, 'Imóvel reprovado (Retornado para Rascunho)', oldProperty, newProperty);
           
