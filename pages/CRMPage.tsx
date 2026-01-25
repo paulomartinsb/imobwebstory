@@ -2,8 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Badge, Button, Input, PhoneInput, formatPhone } from '../components/ui/Elements';
 import { Client, PipelineStageConfig, PropertyType, LeadSource, Property, Visit, DetailedInterestProfile } from '../types';
-import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, DollarSign, Compass, Layers, GripVertical, Archive, PlayCircle } from 'lucide-react';
-import { calculateClientMatch, generatePipelineInsights, generateLeadCommercialInsights } from '../services/geminiService';
+import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, DollarSign, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle } from 'lucide-react';
+import { calculateClientMatch, generatePipelineInsights, generateLeadCommercialInsights, findBestMatch } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
 
@@ -170,6 +170,16 @@ const ClientCard: React.FC<{
     const owner = users.find(u => u.id === client.ownerId);
     const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
 
+    // Data Normalization (Profile vs Legacy Root Fields)
+    const profile = client.interestProfile;
+    const locations = profile?.neighborhoods?.length ? profile.neighborhoods : client.desiredLocation;
+    const features = profile?.mustHaveFeatures?.length ? profile.mustHaveFeatures : client.desiredFeatures;
+    const interestTypes = profile?.propertyTypes?.length ? profile.propertyTypes : client.interest;
+    const bedrooms = profile?.minBedrooms || client.minBedrooms;
+    const suites = profile?.minSuites || client.minBathrooms; // fallback logic
+    const parking = profile?.minParking || client.minParking;
+    const area = profile?.minArea || client.minArea;
+
     const getSourceIcon = (source: LeadSource) => {
         if (source.toLowerCase().includes('instagram')) return <span className="text-pink-600 bg-pink-50 px-1.5 py-0.5 rounded text-[10px] font-bold">INSTA</span>;
         if (source.toLowerCase().includes('site')) return <span className="text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded text-[10px] font-bold">SITE</span>;
@@ -198,21 +208,55 @@ const ClientCard: React.FC<{
     // --- Drag Handlers ---
     const handleDragStart = (e: React.DragEvent) => {
         e.dataTransfer.setData('clientId', client.id);
-        // Visual effect for drag
         e.dataTransfer.effectAllowed = 'move';
-        // Optional: Set a drag image if you want custom styling
     };
+
+    // --- Lead Aging Logic ---
+    const getAgingColor = () => {
+        const lastContactDate = new Date(client.lastContact || client.createdAt);
+        const diffTime = Math.abs(new Date().getTime() - lastContactDate.getTime());
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        
+        const config = systemSettings.leadAging || { freshLimit: 2, warmLimit: 7, freshColor: 'green', warmColor: 'yellow', coldColor: 'red' };
+
+        // Determine color based on limits
+        let colorName = config.coldColor;
+        if (diffDays <= config.freshLimit) colorName = config.freshColor;
+        else if (diffDays <= config.warmLimit) colorName = config.warmColor;
+
+        // Map generic names to tailwind border classes
+        const colorMap: Record<string, string> = {
+            'green': 'border-l-green-500 hover:border-l-green-600',
+            'yellow': 'border-l-yellow-500 hover:border-l-yellow-600',
+            'red': 'border-l-red-500 hover:border-l-red-600',
+            'blue': 'border-l-blue-500 hover:border-l-blue-600',
+            'purple': 'border-l-purple-500 hover:border-l-purple-600',
+            'gray': 'border-l-gray-500 hover:border-l-gray-600',
+            'orange': 'border-l-orange-500 hover:border-l-orange-600',
+        };
+
+        return colorMap[colorName] || colorMap['red']; // Default red if mapping fails
+    };
+
+    const agingBorderClass = getAgingColor();
+
+    // Entry Date Logic
+    const entryDate = new Date(client.createdAt);
+    const timeSinceEntry = Math.abs(new Date().getTime() - entryDate.getTime());
+    const daysSinceEntry = Math.floor(timeSinceEntry / (1000 * 60 * 60 * 24));
+    const entryDateStr = entryDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 
     return (
         <Card 
-            className="p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group border-l-4 border-l-transparent hover:border-l-primary-500 relative bg-white"
+            className={`p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group border-l-4 relative bg-white ${agingBorderClass}`}
             onClick={(e: React.MouseEvent) => e.stopPropagation()} 
+            onDoubleClick={(e: React.MouseEvent) => { e.stopPropagation(); onEdit(client); }}
             draggable // Enable Native Drag
             onDragStart={handleDragStart}
         >
             <div className="flex justify-between items-start mb-2">
                 <div className="flex flex-col gap-1 w-full pr-6">
-                    <h4 className="font-semibold text-slate-800 flex items-center gap-2 text-sm leading-tight">
+                    <h4 className="font-semibold text-slate-800 flex items-center gap-2 text-sm leading-tight select-none">
                         <GripVertical size={12} className="text-slate-300 shrink-0 cursor-grab" />
                         {client.name}
                         {getSourceIcon(client.source)}
@@ -258,13 +302,7 @@ const ClientCard: React.FC<{
                                 >
                                     <Edit3 size={12} /> Editar
                                 </button>
-                                <button 
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); onDelete(client.id); }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors"
-                                >
-                                    <Trash2 size={12} /> Excluir
-                                </button>
+                                {/* DELETE BUTTON REMOVED AS REQUESTED */}
                             </div>
                         )}
                     </div>
@@ -280,32 +318,56 @@ const ClientCard: React.FC<{
                     <Phone size={12} className="shrink-0" /> {client.phone}
                 </div>
                 
-                {/* Interest Types Display */}
-                {client.interest && client.interest.length > 0 && (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                        {client.interest.map(interest => (
-                            <span key={interest} className="text-[10px] font-semibold text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded capitalize">
-                                {getInterestLabel(interest)}
-                            </span>
-                        ))}
+                {/* SUCCINCT PREFERENCES BLOCK */}
+                <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-1.5 mt-1">
+                    {/* Row 1: Budget & Type */}
+                    <div className="flex justify-between items-center text-xs">
+                        <div className="flex items-center gap-1 font-bold text-emerald-600">
+                            <DollarSign size={12} />
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 }).format(client.budget)}
+                        </div>
+                        <div className="flex gap-1">
+                            {interestTypes && interestTypes.length > 0 ? (
+                                interestTypes.slice(0, 2).map((type, idx) => (
+                                    <span key={idx} className="capitalize bg-white border border-slate-200 px-1 rounded text-[10px] text-slate-600">
+                                        {getInterestLabel(type)}
+                                    </span>
+                                ))
+                            ) : <span className="text-[10px] text-slate-400">Qualquer</span>}
+                            {interestTypes && interestTypes.length > 2 && <span className="text-[10px] text-slate-400">+{interestTypes.length - 2}</span>}
+                        </div>
                     </div>
-                )}
 
-                {/* Detailed Requirements Section */}
-                {(client.minBedrooms || client.minArea || client.minParking || client.minBathrooms) && (
-                    <div className="flex flex-wrap gap-2 pt-1">
-                        {client.minBedrooms && (
-                            <span className="inline-flex items-center gap-1 text-[10px] bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded border border-slate-100">
-                                <Bed size={10} /> {client.minBedrooms}+
-                            </span>
-                        )}
-                        {client.minArea && (
-                            <span className="inline-flex items-center gap-1 text-[10px] bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded border border-slate-100">
-                                <Ruler size={10} /> {client.minArea}m²
-                            </span>
-                        )}
-                    </div>
-                )}
+                    {/* Row 2: Specs (Icons) */}
+                    {(bedrooms || suites || parking || area) && (
+                        <div className="flex items-center gap-3 text-[10px] text-slate-600 border-t border-slate-200 pt-1.5">
+                            {bedrooms > 0 && <span className="flex items-center gap-0.5" title="Mínimo Quartos"><Bed size={10} /> {bedrooms}</span>}
+                            {suites > 0 && <span className="flex items-center gap-0.5" title="Mínimo Banheiros/Suítes"><Bath size={10} /> {suites}</span>}
+                            {parking > 0 && <span className="flex items-center gap-0.5" title="Mínimo Vagas"><Car size={10} /> {parking}</span>}
+                            {area > 0 && <span className="flex items-center gap-0.5" title="Mínimo Área"><Ruler size={10} /> {area}m²</span>}
+                        </div>
+                    )}
+
+                    {/* Row 3: Location */}
+                    {locations && locations.length > 0 && (
+                        <div className="flex items-start gap-1 text-[10px] text-slate-600">
+                            <MapPin size={10} className="mt-0.5 shrink-0 text-slate-400" />
+                            <span className="truncate leading-tight max-w-[180px]">{locations.join(', ')}</span>
+                        </div>
+                    )}
+
+                    {/* Row 4: Features Tags */}
+                    {features && features.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                            {features.slice(0, 3).map((f, i) => (
+                                <span key={i} className="text-[9px] bg-white border border-slate-200 px-1 py-0.5 rounded text-slate-500 flex items-center gap-0.5">
+                                    <Tag size={8} /> {f}
+                                </span>
+                            ))}
+                            {features.length > 3 && <span className="text-[9px] text-slate-400">+{features.length - 3}</span>}
+                        </div>
+                    )}
+                </div>
 
                 {/* Visits List */}
                 {scheduledVisits.length > 0 && (
@@ -354,14 +416,10 @@ const ClientCard: React.FC<{
                         })}
                     </div>
                 )}
-
-                <div className="font-medium text-slate-700 mt-2 text-xs">
-                    Teto: {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumSignificantDigits: 3 }).format(client.budget)}
-                </div>
                 
                 {/* Linked Properties Codes */}
                 {linkedCodes.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
+                    <div className="flex flex-wrap gap-1 mt-1">
                         {linkedCodes.map((code, idx) => (
                             <span key={idx} className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded font-mono font-medium">
                                 {code}
@@ -377,19 +435,21 @@ const ClientCard: React.FC<{
                     onClick={(e) => { e.stopPropagation(); onMatch(client); }}
                     className="flex-1 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded flex items-center justify-center gap-1 transition-colors border border-indigo-100"
                 >
-                    <Sparkles size={12} className="pointer-events-none" /> Match (IA)
+                    <Sparkles size={12} className="pointer-events-none" /> Match Imóvel
                 </button>
                 <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onLink(client); }}
                     className="flex-1 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded flex items-center justify-center gap-1 transition-colors border border-slate-200"
                 >
-                    <Link size={12} className="pointer-events-none" /> Vincular (Manual)
+                    <Link size={12} className="pointer-events-none" /> Vincular Imóvel
                 </button>
             </div>
 
             <div className="pt-2 border-t border-slate-100 flex justify-between items-center pl-5">
-                <span className="text-[10px] text-slate-400">Há {Math.floor((new Date().getTime() - new Date(client.lastContact).getTime()) / (1000 * 3600 * 24))} dias</span>
+                <span className="text-[10px] text-slate-400 font-medium">
+                    {entryDateStr} <span className="text-slate-300">•</span> {daysSinceEntry} dias
+                </span>
                 {stages.length > 0 && (
                     <select 
                         className="text-[10px] bg-slate-100 border-none rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary-500 max-w-[100px] cursor-pointer"
@@ -451,18 +511,27 @@ export const CRMPage: React.FC = () => {
   const [insights, setInsights] = useState('');
   const [loadingInsights, setLoadingInsights] = useState(false);
   const [selectedClientForMatch, setSelectedClientForMatch] = useState<Client | null>(null);
+  const [selectedMatchIds, setSelectedMatchIds] = useState<Set<string>>(new Set()); // New: Track Selected Properties in Match
   const [selectedClientForLink, setSelectedClientForLink] = useState<Client | null>(null);
   const [selectedClientForVisit, setSelectedClientForVisit] = useState<Client | null>(null);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
 
-  // Matching State
+  // Matching State & AI Best Match
   const [matchTolerance, setMatchTolerance] = useState(10);
   const [filterType, setFilterType] = useState<PropertyType | 'all'>('all');
   const [filterLocation, setFilterLocation] = useState('');
   const [filterBedrooms, setFilterBedrooms] = useState(0);
+  // NEW FILTERS
+  const [filterSuites, setFilterSuites] = useState(0);
+  const [filterParking, setFilterParking] = useState(0);
+  const [filterArea, setFilterArea] = useState(0);
 
   const [analyzingPropertyId, setAnalyzingPropertyId] = useState<string | null>(null);
   const [analysisResults, setAnalysisResults] = useState<Record<string, {score: number, reason: string}>>({});
+  
+  // New State for "AI Recommendation"
+  const [bestMatchSuggestion, setBestMatchSuggestion] = useState<{property: Property, reason: string} | null>(null);
+  const [isLoadingBestMatch, setIsLoadingBestMatch] = useState(false);
 
   // Pipeline Management Local State
   const [newPipelineName, setNewPipelineName] = useState('');
@@ -542,6 +611,7 @@ export const CRMPage: React.FC = () => {
       }
   };
   
+  // ... (Remaining handlers are unchanged, except where renderFormContent is defined below) ...
   const confirmMarkAsLost = () => {
       if (!clientToMarkLost || !lostReason.trim()) {
           addNotification('error', 'Por favor, informe o motivo da perda.');
@@ -625,7 +695,8 @@ export const CRMPage: React.FC = () => {
       setInsightsOpen(true);
       if (!insights) {
           setLoadingInsights(true);
-          const result = await generatePipelineInsights(pipelineClients);
+          // Pass prompt template from settings
+          const result = await generatePipelineInsights(pipelineClients, systemSettings.crmGlobalInsightsPrompt);
           setInsights(result);
           setLoadingInsights(false);
       }
@@ -637,7 +708,8 @@ export const CRMPage: React.FC = () => {
       setLoadingLeadInsights(true);
       setCurrentLeadInsights('');
       
-      const result = await generateLeadCommercialInsights(client, properties);
+      // Pass prompt template from settings
+      const result = await generateLeadCommercialInsights(client, properties, systemSettings.crmCardInsightsPrompt);
       setCurrentLeadInsights(result);
       setLoadingLeadInsights(false);
   }
@@ -716,7 +788,6 @@ export const CRMPage: React.FC = () => {
       setCompletingVisit(null);
   }
 
-  // ... (Keep other handlers: handleQuickAdd, handleOpenEdit, etc.) ...
   const handleQuickAdd = () => {
       setFormData(initialFormState); 
       setFoundClient(null); 
@@ -971,21 +1042,119 @@ export const CRMPage: React.FC = () => {
 
   const handleOpenMatch = (client: Client) => {
       setSelectedClientForMatch(client);
+      // Reset all match states
       setMatchTolerance(10);
       setAnalysisResults({});
+      setBestMatchSuggestion(null);
+      setSelectedMatchIds(new Set()); // Reset selections
+      
+      // Initialize filters from client data
       setFilterType(client.interest[0] || 'all');
       setFilterLocation(client.desiredLocation[0] || '');
       setFilterBedrooms(client.minBedrooms || 0);
+      setFilterSuites(client.interestProfile?.minSuites || 0);
+      setFilterParking(client.interestProfile?.minParking || 0);
+      setFilterArea(client.minArea || 0);
+      
       setMatchModalOpen(true);
   }
 
   const handleRunAiAnalysis = async (property: Property) => {
       if(!selectedClientForMatch) return;
       setAnalyzingPropertyId(property.id);
-      const result = await calculateClientMatch(selectedClientForMatch, property);
+      // Pass prompt template from settings
+      const result = await calculateClientMatch(selectedClientForMatch, property, systemSettings.matchAiPrompt);
       setAnalysisResults(prev => ({ ...prev, [property.id]: result }));
       setAnalyzingPropertyId(null);
   }
+
+  const toggleMatchSelection = (id: string) => {
+      const newSet = new Set(selectedMatchIds);
+      if (newSet.has(id)) {
+          newSet.delete(id);
+      } else {
+          newSet.add(id);
+      }
+      setSelectedMatchIds(newSet);
+  }
+
+  const sendMatchesToWhatsapp = () => {
+      if (!selectedClientForMatch) return;
+      const selectedProps = properties.filter(p => selectedMatchIds.has(p.id));
+      if (selectedProps.length === 0) return;
+
+      let message = `Olá ${selectedClientForMatch.name}, separei algumas oportunidades para você:\n\n`;
+      selectedProps.forEach(p => {
+          message += `🏠 *${p.title}* (Ref: ${p.code})\n`;
+          message += `💰 ${new Intl.NumberFormat('pt-BR', {style: 'currency', currency: 'BRL'}).format(p.price)}\n`;
+          message += `📍 ${p.address}\n`;
+          // Simulated public link - In a real app this would be dynamic
+          message += `🔗 https://goldimob.ai/imovel/${p.id}\n\n`;
+      });
+
+      const cleanPhone = selectedClientForMatch.phone.replace(/\D/g, '');
+      window.open(`https://wa.me/55${cleanPhone}?text=${encodeURIComponent(message)}`, '_blank');
+  }
+
+  // --- MATCHED PROPERTIES CALCULATION ---
+  const matchedProperties = useMemo(() => {
+      if (!selectedClientForMatch) return [];
+      
+      return properties.filter(p => {
+          // IMPORTANT FIX: 
+          // If client budget is 0 (unspecified), treat as unlimited/high value for filtering purposes.
+          const clientBudget = selectedClientForMatch.budget || 0;
+          
+          const maxBudget = clientBudget > 0 
+            ? clientBudget * (1 + matchTolerance / 100)
+            : Number.MAX_SAFE_INTEGER; // Unlimited if 0
+
+          const minBudget = (selectedClientForMatch.minBudget || 0) * (1 - matchTolerance / 100);
+
+          if (p.price > maxBudget) return false;
+          if (p.price < minBudget) return false;
+
+          if (filterType !== 'all' && p.type !== filterType) return false;
+          if (p.bedrooms < filterBedrooms) return false;
+          // New Filters logic
+          if (p.bathrooms < filterSuites) return false; // Approximation, as 'bathrooms' often maps to suites in listing
+          // if (p.parking < filterParking) return false; // Assuming property has parking field (not in current mock type but logical)
+          if (p.area < filterArea) return false;
+
+          if (filterLocation) {
+              const loc = filterLocation.toLowerCase();
+              const addr = p.address.toLowerCase();
+              // Only filter by location if address doesn't include the string AND tolerance is low
+              if (!addr.includes(loc) && matchTolerance < 30) return false;
+          }
+          return true;
+      });
+  }, [selectedClientForMatch, properties, matchTolerance, filterType, filterBedrooms, filterSuites, filterParking, filterArea, filterLocation]);
+
+  // --- AUTOMATIC AI RECOMMENDATION ---
+  useEffect(() => {
+      const getRecommendation = async () => {
+          if (matchModalOpen && selectedClientForMatch && matchedProperties.length > 0 && !bestMatchSuggestion && !isLoadingBestMatch) {
+              setIsLoadingBestMatch(true);
+              // Send top 10 matches to AI to pick the best one
+              const candidates = matchedProperties.slice(0, 10);
+              const result = await findBestMatch(selectedClientForMatch, candidates);
+              
+              if (result && result.propertyId) {
+                  const winner = properties.find(p => p.id === result.propertyId);
+                  if (winner) {
+                      setBestMatchSuggestion({ property: winner, reason: result.reason });
+                  }
+              }
+              setIsLoadingBestMatch(false);
+          }
+      };
+      
+      // Debounce logic or check if modal just opened
+      if(matchModalOpen) {
+          getRecommendation();
+      }
+  }, [matchModalOpen, selectedClientForMatch]); // Depend only on modal open to trigger once initially
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const raw = e.target.value;
@@ -1034,24 +1203,6 @@ export const CRMPage: React.FC = () => {
       addNotification('info', 'Dados carregados. Edite e salve para adicionar ao pipeline.');
   };
 
-  const matchedProperties = selectedClientForMatch ? properties.filter(p => {
-      const maxBudget = selectedClientForMatch.budget * (1 + matchTolerance / 100);
-      const minBudget = (selectedClientForMatch.minBudget || 0) * (1 - matchTolerance / 100);
-
-      if (p.price > maxBudget) return false;
-      if (p.price < minBudget) return false;
-
-      if (filterType !== 'all' && p.type !== filterType) return false;
-      if (p.bedrooms < filterBedrooms) return false;
-      if (selectedClientForMatch.minArea && p.area < selectedClientForMatch.minArea) return false;
-      if (filterLocation) {
-          const loc = filterLocation.toLowerCase();
-          const addr = p.address.toLowerCase();
-          if (!addr.includes(loc) && matchTolerance < 30) return false;
-      }
-      return true;
-  }) : [];
-
   const renderFormContent = (onSubmit: any, label: string) => {
       const currentClient = editingClientId ? clients.find(c => c.id === editingClientId) : null;
       const profile = formData.interestProfile;
@@ -1065,20 +1216,20 @@ export const CRMPage: React.FC = () => {
 
       return (
       <div className="p-6">
-          <form onSubmit={onSubmit} className="space-y-6">
+          <form onSubmit={onSubmit} className="space-y-8">
                 {/* Basic Info Section */}
-                <div className="space-y-4">
-                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1 flex items-center gap-2">
+                <div className="space-y-5">
+                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-2">
                         <User size={16} /> Dados Pessoais
                     </h3>
                     
                     {isStaff && (
-                        <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 mb-2">
-                            <label className="text-sm font-medium text-blue-800 mb-1 block flex items-center gap-2">
+                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 mb-2">
+                            <label className="text-sm font-medium text-blue-800 mb-2 block flex items-center gap-2">
                                 <User size={16} /> Corretor Responsável
                             </label>
                             <select 
-                                className="w-full px-4 py-2 rounded-lg border border-blue-200 text-sm focus:ring-2 focus:ring-blue-500/20"
+                                className="w-full px-4 py-2.5 rounded-lg border border-blue-200 text-sm focus:ring-2 focus:ring-blue-500/20 bg-white"
                                 value={formData.ownerId}
                                 onChange={e => setFormData({...formData, ownerId: e.target.value})}
                             >
@@ -1092,7 +1243,7 @@ export const CRMPage: React.FC = () => {
                         </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <Input label="Nome" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
                         <div className="relative">
                             <PhoneInput 
@@ -1111,11 +1262,11 @@ export const CRMPage: React.FC = () => {
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <Input label="Email" type="email" required value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
                         <div className="space-y-1">
                             <label className="text-sm font-medium text-slate-700">Origem</label>
-                            <select className="w-full px-4 py-2 rounded-lg border border-slate-200" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as LeadSource})}>
+                            <select className="w-full px-4 py-2.5 rounded-lg border border-slate-200 text-sm bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as LeadSource})}>
                                 {systemSettings.leadSources.map((source, idx) => (<option key={idx} value={source}>{source}</option>))}
                             </select>
                         </div>
@@ -1123,73 +1274,75 @@ export const CRMPage: React.FC = () => {
                 </div>
 
                 {/* 1. Imóvel */}
-                <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1 flex items-center gap-2">
-                        <Building size={16} /> O que busca?
+                <div className="space-y-5">
+                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-2">
+                        <Building size={16} /> Preferências do Imóvel
                     </h4>
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                            <label className="text-xs font-medium text-slate-500">Tipos de Imóvel</label>
+                    <div className="grid grid-cols-1 gap-5">
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700">Tipos de Imóvel</label>
                             <div className="flex flex-wrap gap-2">
                                 {systemSettings.propertyTypes.map(t => (
                                     <button 
                                     key={t.value} 
                                     type="button"
                                     onClick={() => toggleProfileList('propertyTypes', t.value)}
-                                    className={`px-2 py-1 text-xs border rounded ${profile.propertyTypes.includes(t.value) ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600'}`}
+                                    className={`px-3 py-1.5 text-sm border rounded-lg transition-all ${profile.propertyTypes.includes(t.value) ? 'bg-primary-600 text-white border-primary-600 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
                                     >
                                         {t.label}
                                     </button>
                                 ))}
                             </div>
                         </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-medium text-slate-500">Condição / Estágio</label>
-                            <select 
-                            className="w-full border rounded px-2 py-1 text-sm"
-                            value={profile.condition}
-                            onChange={e => setProfileField('condition', e.target.value)}
-                            >
-                                <option value="indiferente">Indiferente</option>
-                                <option value="pronto">Pronto para Morar</option>
-                                <option value="planta">Na Planta</option>
-                                <option value="construcao">Em Construção</option>
-                            </select>
-                        </div>
-                        <div className="space-y-1">
-                            <label className="text-xs font-medium text-slate-500">Finalidade</label>
-                            <select 
-                            className="w-full border rounded px-2 py-1 text-sm"
-                            value={profile.usage}
-                            onChange={e => setProfileField('usage', e.target.value)}
-                            >
-                                <option value="moradia">Moradia</option>
-                                <option value="investimento">Investimento</option>
-                            </select>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium text-slate-700">Condição / Estágio</label>
+                                <select 
+                                className="w-full border rounded-lg px-4 py-2.5 text-sm bg-white"
+                                value={profile.condition}
+                                onChange={e => setProfileField('condition', e.target.value)}
+                                >
+                                    <option value="indiferente">Indiferente</option>
+                                    <option value="pronto">Pronto para Morar</option>
+                                    <option value="planta">Na Planta</option>
+                                    <option value="construcao">Em Construção</option>
+                                </select>
+                            </div>
+                            <div className="space-y-1">
+                                <label className="text-sm font-medium text-slate-700">Finalidade</label>
+                                <select 
+                                className="w-full border rounded-lg px-4 py-2.5 text-sm bg-white"
+                                value={profile.usage}
+                                onChange={e => setProfileField('usage', e.target.value)}
+                                >
+                                    <option value="moradia">Moradia</option>
+                                    <option value="investimento">Investimento</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {/* 2. Características */}
-                <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1 flex items-center gap-2">
-                        <Layers size={16} /> Características Mínimas
+                <div className="space-y-5">
+                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-2">
+                        <Layers size={16} /> Características e Comodidades
                     </h4>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <Input label="Quartos" type="number" value={profile.minBedrooms} onChange={e => setProfileField('minBedrooms', Number(e.target.value))} />
-                        <Input label="Suítes" type="number" value={profile.minSuites} onChange={e => setProfileField('minSuites', Number(e.target.value))} />
-                        <Input label="Vagas" type="number" value={profile.minParking} onChange={e => setProfileField('minParking', Number(e.target.value))} />
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <Input label="Mín. Quartos" type="number" value={profile.minBedrooms} onChange={e => setProfileField('minBedrooms', Number(e.target.value))} />
+                        <Input label="Mín. Suítes" type="number" value={profile.minSuites} onChange={e => setProfileField('minSuites', Number(e.target.value))} />
+                        <Input label="Mín. Vagas" type="number" value={profile.minParking} onChange={e => setProfileField('minParking', Number(e.target.value))} />
                         <Input label="Área Útil (m²)" type="number" value={profile.minArea} onChange={e => setProfileField('minArea', Number(e.target.value))} />
                     </div>
-                    <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500">Diferenciais Obrigatórios</label>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-700">Diferenciais Obrigatórios (Tags)</label>
                         <div className="flex flex-wrap gap-2">
                             {systemSettings.propertyFeatures.map(f => (
                                 <button 
                                 key={f} 
                                 type="button"
                                 onClick={() => toggleProfileList('mustHaveFeatures', f)}
-                                className={`px-2 py-1 text-xs border rounded-full ${profile.mustHaveFeatures.includes(f) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600'}`}
+                                className={`px-3 py-1.5 text-xs border rounded-full transition-all ${profile.mustHaveFeatures.includes(f) ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm' : 'bg-white text-slate-600 hover:bg-slate-50'}`}
                                 >
                                     {f}
                                 </button>
@@ -1199,40 +1352,42 @@ export const CRMPage: React.FC = () => {
                 </div>
 
                 {/* 3. Localização */}
-                <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1 flex items-center gap-2">
-                        <MapPin size={16} /> Localização
+                <div className="space-y-5">
+                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-2">
+                        <MapPin size={16} /> Localização Desejada
                     </h4>
-                    <div className="space-y-2">
-                        <div className="flex justify-between">
-                            <label className="text-xs font-medium text-slate-500">Bairros de Interesse</label>
+                    <div className="space-y-3">
+                        <div className="flex flex-col md:flex-row justify-between gap-2">
+                            <label className="text-sm font-medium text-slate-700 pt-2">Bairros de Interesse</label>
                             <div className="flex items-center gap-2">
-                                <input placeholder="Busca CEP" className="w-24 px-2 py-1 text-xs border border-slate-200 rounded" value={cepSearchInput} onChange={(e) => setCepSearchInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); handleCepSearch(); } }} />
-                                <button type="button" onClick={handleCepSearch} disabled={isCepLoading} className="text-slate-500 hover:text-primary-600">{isCepLoading ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}</button>
+                                <input placeholder="Busca por CEP" className="w-32 px-3 py-1.5 text-xs border border-slate-200 rounded-lg" value={cepSearchInput} onChange={(e) => setCepSearchInput(e.target.value)} onKeyDown={(e) => { if(e.key === 'Enter') { e.preventDefault(); handleCepSearch(); } }} />
+                                <button type="button" onClick={handleCepSearch} disabled={isCepLoading} className="text-slate-500 hover:text-primary-600 p-1 bg-slate-100 rounded">{isCepLoading ? <Loader2 size={14} className="animate-spin"/> : <Search size={14} />}</button>
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <input type="text" list="location-suggestions" placeholder="Add bairro..." className="flex-1 px-3 py-1.5 rounded-lg border border-slate-200 text-sm" value={locationInput} onChange={e => setLocationInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); handleAddLocation(); }}} />
+                            <input type="text" list="location-suggestions" placeholder="Digite um bairro..." className="flex-1 px-4 py-2.5 rounded-lg border border-slate-200 text-sm focus:ring-2 focus:ring-primary-500/20" value={locationInput} onChange={e => setLocationInput(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); handleAddLocation(); }}} />
                             <datalist id="location-suggestions">{systemSettings.availableLocations.map((loc, idx) => (<option key={idx} value={loc} />))}</datalist>
-                            <Button type="button" variant="secondary" className="px-3 py-1" onClick={handleAddLocation}><Plus size={14} /></Button>
+                            <Button type="button" variant="secondary" className="px-4 py-2" onClick={handleAddLocation}><Plus size={16} /></Button>
                         </div>
-                        <div className="flex flex-wrap gap-1 mt-1">
-                            {profile.neighborhoods.map((loc, idx) => (<span key={idx} className="flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 text-xs border border-indigo-100">{loc}<button type="button" onClick={() => removeLocation(loc)} className="hover:text-red-500"><X size={12}/></button></span>))}
-                        </div>
+                        {profile.neighborhoods.length > 0 && (
+                            <div className="flex flex-wrap gap-2 mt-2 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                {profile.neighborhoods.map((loc, idx) => (<span key={idx} className="flex items-center gap-1.5 px-3 py-1 rounded bg-white text-indigo-700 text-sm border border-indigo-100 shadow-sm font-medium">{loc}<button type="button" onClick={() => removeLocation(loc)} className="hover:text-red-500 transition-colors"><X size={14}/></button></span>))}
+                            </div>
+                        )}
                     </div>
                 </div>
 
                 {/* 4. Financeiro */}
-                <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1 flex items-center gap-2">
+                <div className="space-y-5">
+                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-2">
                         <DollarSign size={16} /> Financeiro
                     </h4>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <Input label="Valor Máximo (Teto)" type="number" value={profile.maxPrice} onChange={e => setProfileField('maxPrice', Number(e.target.value))} />
                         <div className="space-y-1">
-                            <label className="text-xs font-medium text-slate-500">Forma de Pagamento</label>
+                            <label className="text-sm font-medium text-slate-700">Forma de Pagamento</label>
                             <select 
-                            className="w-full border rounded px-2 py-1 text-sm"
+                            className="w-full border rounded-lg px-4 py-2.5 text-sm bg-white"
                             value={profile.paymentMethod}
                             onChange={e => setProfileField('paymentMethod', e.target.value)}
                             >
@@ -1243,22 +1398,22 @@ export const CRMPage: React.FC = () => {
                             </select>
                         </div>
                     </div>
-                    <label className="flex items-center gap-2 text-sm text-slate-700">
-                        <input type="checkbox" checked={profile.hasFgts} onChange={e => setProfileField('hasFgts', e.target.checked)} />
-                        Pretende usar FGTS?
-                    </label>
+                    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
+                        <input type="checkbox" id="fgts-check" className="w-4 h-4 text-primary-600 rounded border-slate-300 focus:ring-primary-500" checked={profile.hasFgts} onChange={e => setProfileField('hasFgts', e.target.checked)} />
+                        <label htmlFor="fgts-check" className="text-sm text-slate-700 font-medium cursor-pointer">Pretende utilizar FGTS na compra?</label>
+                    </div>
                 </div>
 
                 {/* 5. Lifestyle */}
-                <div className="space-y-3">
-                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-1 flex items-center gap-2">
-                        <Compass size={16} /> Estilo de Vida
+                <div className="space-y-5">
+                    <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b pb-2 flex items-center gap-2">
+                        <Compass size={16} /> Estilo de Vida e Observações
                     </h4>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <div className="space-y-1">
-                            <label className="text-xs font-medium text-slate-500">Sol / Orientação</label>
+                            <label className="text-sm font-medium text-slate-700">Sol / Orientação</label>
                             <select 
-                            className="w-full border rounded px-2 py-1 text-sm"
+                            className="w-full border rounded-lg px-4 py-2.5 text-sm bg-white"
                             value={profile.sunOrientation}
                             onChange={e => setProfileField('sunOrientation', e.target.value)}
                             >
@@ -1268,9 +1423,9 @@ export const CRMPage: React.FC = () => {
                             </select>
                         </div>
                         <div className="space-y-1">
-                            <label className="text-xs font-medium text-slate-500">Andar Preferido</label>
+                            <label className="text-sm font-medium text-slate-700">Andar Preferido</label>
                             <select 
-                            className="w-full border rounded px-2 py-1 text-sm"
+                            className="w-full border rounded-lg px-4 py-2.5 text-sm bg-white"
                             value={profile.floorPreference}
                             onChange={e => setProfileField('floorPreference', e.target.value)}
                             >
@@ -1280,20 +1435,20 @@ export const CRMPage: React.FC = () => {
                             </select>
                         </div>
                     </div>
-                    <div className="space-y-1">
-                        <label className="text-xs font-medium text-slate-500">Observações Gerais</label>
+                    <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-700">Observações Gerais (Sonho de Consumo)</label>
                         <textarea 
-                        className="w-full border rounded p-2 text-sm h-20" 
-                        placeholder="Ex: Cliente tem um Golden Retriever, precisa de área verde próxima..."
+                        className="w-full border rounded-lg p-3 text-sm h-24 focus:ring-2 focus:ring-primary-500/20 outline-none" 
+                        placeholder="Ex: Cliente tem um Golden Retriever, precisa de área verde próxima. Odeia barulho de rua..."
                         value={profile.notes}
                         onChange={e => setProfileField('notes', e.target.value)}
                         />
                     </div>
                 </div>
 
-                <div className="pt-4 flex justify-end gap-3 border-t border-slate-100">
+                <div className="pt-6 flex justify-end gap-3 border-t border-slate-100">
                     <Button type="button" variant="outline" onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }}>Cancelar</Button>
-                    <Button type="submit" className="gap-2"><Save size={18} /> {label}</Button>
+                    <Button type="submit" className="gap-2 px-6"><Save size={18} /> {label}</Button>
                 </div>
           </form>
 
@@ -1959,114 +2114,6 @@ export const CRMPage: React.FC = () => {
           </div>
       )}
 
-      {/* Re-use existing Modals (Insights, Add Lead, Match) */}
-      {insightsOpen && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50 rounded-t-2xl">
-                    <div className="flex items-center gap-2">
-                        <Sparkles className="text-indigo-600" size={24} />
-                        <h2 className="text-xl font-bold text-indigo-900">IA Pipeline Insights</h2>
-                    </div>
-                    <button onClick={() => setInsightsOpen(false)} className="text-indigo-400 hover:text-indigo-600"><X size={24} /></button>
-                </div>
-                <div className="p-6">
-                    {loadingInsights ? (
-                        <div className="flex flex-col items-center justify-center py-8 space-y-4">
-                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
-                            <p className="text-slate-500 text-sm">Analisando pipeline atual...</p>
-                        </div>
-                    ) : (
-                        <div className="prose prose-sm prose-indigo text-slate-700" dangerouslySetInnerHTML={{ __html: insights }} />
-                    )}
-                </div>
-                <div className="p-4 border-t border-slate-100 flex justify-end">
-                    <Button onClick={() => setInsightsOpen(false)}>Fechar</Button>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* Add Lead Modal (Simplified for CRM Context) */}
-      {addLeadOpen && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
-                    <h2 className="text-xl font-bold text-slate-800">Novo Lead</h2>
-                    <button onClick={() => setAddLeadOpen(false)}><X size={24} className="text-slate-400 hover:text-slate-600" /></button>
-                  </div>
-                  {renderFormContent(handleManualSubmit, editingClientId ? 'Salvar e Mover' : 'Salvar e Adicionar')}
-              </div>
-          </div>
-      )}
-
-      {/* Edit Lead Modal */}
-      {editLeadOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] overflow-y-auto">
-                <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-indigo-50 rounded-t-2xl sticky top-0 z-10">
-                    <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
-                        <Edit3 size={20} /> Editar Lead
-                    </h2>
-                    <button onClick={() => setEditLeadOpen(false)} className="text-indigo-400 hover:text-indigo-600"><X size={24}/></button>
-                </div>
-                 {renderFormContent(handleUpdateLead, 'Salvar Alterações')}
-            </div>
-        </div>
-      )}
-
-      {/* Match Modal */}
-      {matchModalOpen && selectedClientForMatch && (
-         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-             <div className="bg-white rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl">
-                 <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-indigo-50 rounded-t-2xl">
-                     <div>
-                         <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
-                             <Sparkles size={24} className="text-indigo-500" /> Smart Match
-                         </h2>
-                         <p className="text-indigo-700 text-sm mt-1">Buscando para <strong>{selectedClientForMatch.name}</strong></p>
-                     </div>
-                     <button onClick={() => setMatchModalOpen(false)} className="text-indigo-400 hover:text-indigo-600"><X size={24} /></button>
-                 </div>
-                 {/* Filters and List... (Condensed for brevity, same logic as provided previously) */}
-                 <div className="flex-1 overflow-y-auto p-6 bg-slate-50/50">
-                     {matchedProperties.length === 0 ? (
-                         <div className="text-center p-8 text-slate-400">Nenhum imóvel encontrado.</div>
-                     ) : (
-                         <div className="grid grid-cols-1 gap-4">
-                             {matchedProperties.map(p => (
-                                 <Card key={p.id} className="flex p-4 gap-4">
-                                     <img src={p.images?.[0] || 'https://via.placeholder.com/200'} className="w-24 h-24 object-cover rounded-lg" alt="" />
-                                     <div className="flex-1">
-                                         <h3 className="font-bold">{p.title}</h3>
-                                         <p className="text-sm text-slate-500">{new Intl.NumberFormat('pt-BR', {style:'currency', currency:'BRL'}).format(p.price)}</p>
-                                         
-                                         {analyzingPropertyId === p.id ? (
-                                            <div className="mt-2 text-xs text-indigo-600 flex items-center gap-1 animate-pulse">
-                                                <Loader2 size={12} className="animate-spin" /> Inteligência Artificial analisando...
-                                            </div>
-                                         ) : analysisResults[p.id] ? (
-                                            <div className="mt-2 text-xs p-2 bg-indigo-50 rounded text-indigo-800 border border-indigo-100 animate-in fade-in zoom-in duration-200">
-                                                <div className="flex items-center gap-1 font-bold mb-1 text-indigo-900">
-                                                    <Sparkles size={10} /> {analysisResults[p.id].score}% de Compatibilidade
-                                                </div>
-                                                {analysisResults[p.id].reason}
-                                            </div>
-                                         ) : (
-                                            <Button variant="outline" className="mt-2 text-xs w-full hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200" onClick={() => handleRunAiAnalysis(p)}>
-                                                <Sparkles size={12} /> Analisar Compatibilidade
-                                            </Button>
-                                         )}
-                                     </div>
-                                 </Card>
-                             ))}
-                         </div>
-                     )}
-                 </div>
-             </div>
-         </div>
-      )}
-
       {/* Property Detail Modal */}
       {viewProperty && (
           <PropertyDetailModal 
@@ -2077,6 +2124,253 @@ export const CRMPage: React.FC = () => {
             isBroker={isBroker}
             currentUser={currentUser}
           />
+      )}
+
+      {/* NEW & EDIT LEAD MODALS (Missing in previous version causing double click fail) */}
+      {addLeadOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
+                    <h2 className="text-xl font-bold text-slate-800">Novo Lead</h2>
+                    <button onClick={() => setAddLeadOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                </div>
+                {renderFormContent(handleManualSubmit, 'Cadastrar Lead')}
+            </div>
+        </div>
+      )}
+
+      {editLeadOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
+                    <h2 className="text-xl font-bold text-slate-800">Editar Lead</h2>
+                    <button onClick={() => setEditLeadOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                </div>
+                {renderFormContent(handleManualSubmit, 'Salvar Alterações')}
+            </div>
+        </div>
+      )}
+
+      {/* --- Global Pipeline Insights Modal --- */}
+      {insightsOpen && (
+          <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
+                  <div className="p-6 border-b border-indigo-100 flex justify-between items-center bg-gradient-to-r from-indigo-50 to-white rounded-t-2xl">
+                      <div>
+                          <h2 className="text-xl font-bold text-indigo-900 flex items-center gap-2">
+                              <Sparkles size={24} className="text-indigo-500" fill="currentColor" /> 
+                              Insights do Pipeline (IA)
+                          </h2>
+                          <p className="text-sm text-indigo-700">Análise estratégica dos seus leads.</p>
+                      </div>
+                      <button onClick={() => setInsightsOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24} /></button>
+                  </div>
+                  
+                  <div className="flex-1 p-6 overflow-y-auto">
+                      {loadingInsights ? (
+                          <div className="flex flex-col items-center justify-center py-12 space-y-4">
+                              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500"></div>
+                              <p className="text-slate-500 font-medium animate-pulse">A IA está analisando seus dados...</p>
+                          </div>
+                      ) : (
+                          <div className="prose prose-sm prose-indigo max-w-none text-slate-700 leading-relaxed">
+                              <div dangerouslySetInnerHTML={{ __html: insights }} />
+                          </div>
+                      )}
+                  </div>
+
+                  <div className="p-4 border-t border-slate-100 bg-slate-50 rounded-b-2xl flex justify-between items-center">
+                      <span className="text-xs text-slate-400">Gerado por Gemini AI</span>
+                      <Button onClick={() => setInsightsOpen(false)}>Fechar</Button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* --- Match Analysis Modal --- */}
+      {matchModalOpen && selectedClientForMatch && (
+          <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl w-full max-w-4xl shadow-2xl animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-white rounded-t-2xl sticky top-0 z-10">
+                      <div>
+                          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                              <Sparkles size={24} className="text-indigo-500" />
+                              Match Inteligente
+                          </h2>
+                          <p className="text-sm text-slate-500">Encontre o imóvel ideal para <strong>{selectedClientForMatch.name}</strong></p>
+                      </div>
+                      <button onClick={() => setMatchModalOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={24}/></button>
+                  </div>
+
+                  <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                      {/* Filters */}
+                      <div className="col-span-1">
+                          <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Tipo</label>
+                          <select className="w-full text-xs border rounded p-1.5" value={filterType} onChange={e => setFilterType(e.target.value as any)}>
+                              <option value="all">Todos</option>
+                              {systemSettings.propertyTypes.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                          </select>
+                      </div>
+                      <div className="col-span-1 md:col-span-2 lg:col-span-1">
+                          <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Localização</label>
+                          <input className="w-full text-xs border rounded p-1.5" value={filterLocation} onChange={e => setFilterLocation(e.target.value)} placeholder="Bairro/Cidade..." />
+                      </div>
+                      <div className="col-span-1">
+                          <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Min. Quartos</label>
+                          <input type="number" className="w-full text-xs border rounded p-1.5" value={filterBedrooms} onChange={e => setFilterBedrooms(Number(e.target.value))} />
+                      </div>
+                      <div className="col-span-1">
+                          <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Min. Suítes</label>
+                          <input type="number" className="w-full text-xs border rounded p-1.5" value={filterSuites} onChange={e => setFilterSuites(Number(e.target.value))} />
+                      </div>
+                      <div className="col-span-1">
+                          <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Min. Área (m²)</label>
+                          <input type="number" className="w-full text-xs border rounded p-1.5" value={filterArea} onChange={e => setFilterArea(Number(e.target.value))} />
+                      </div>
+                      <div className="col-span-2 md:col-span-4 lg:col-span-1">
+                          <label className="text-xs font-semibold text-slate-500 uppercase mb-1 block">Tol. Orçamento</label>
+                          <div className="flex items-center gap-2">
+                              <input type="range" min="0" max="100" step="5" className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer" value={matchTolerance} onChange={e => setMatchTolerance(Number(e.target.value))} />
+                              <span className="text-xs font-bold min-w-[35px] text-right">{matchTolerance}%</span>
+                          </div>
+                      </div>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50">
+                      
+                      {/* AI BEST MATCH RECOMMENDATION SECTION */}
+                      {isLoadingBestMatch ? (
+                          <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-xl animate-pulse flex items-center justify-center gap-3">
+                              <Sparkles size={20} className="text-indigo-500 animate-spin" />
+                              <span className="text-sm text-indigo-700 font-medium">A IA está escolhendo o melhor candidato...</span>
+                          </div>
+                      ) : bestMatchSuggestion && (
+                          <div className="bg-gradient-to-r from-indigo-50 to-white p-4 rounded-xl border border-indigo-200 shadow-sm relative animate-in fade-in slide-in-from-top-4 duration-500">
+                              <div className="absolute -top-3 left-4 bg-indigo-600 text-white text-[10px] uppercase font-bold px-2 py-1 rounded-full shadow-md flex items-center gap-1">
+                                  <Sparkles size={10} fill="currentColor" /> Recomendação da IA
+                              </div>
+                              <div className="flex gap-4 mt-2">
+                                  <img src={bestMatchSuggestion.property.images[0] || 'https://via.placeholder.com/150'} className="w-24 h-24 object-cover rounded-lg border border-indigo-100 shadow-sm" alt="" />
+                                  <div className="flex-1">
+                                      <h4 className="font-bold text-slate-800 text-lg">{bestMatchSuggestion.property.title}</h4>
+                                      <p className="text-sm text-slate-600 mt-1 italic">"{bestMatchSuggestion.reason}"</p>
+                                      <div className="mt-3 flex gap-2">
+                                          <Button size="sm" className="h-8 text-xs bg-indigo-600 hover:bg-indigo-700 border-none" onClick={() => setViewProperty(bestMatchSuggestion.property)}>
+                                              Ver Detalhes
+                                          </Button>
+                                      </div>
+                                  </div>
+                              </div>
+                          </div>
+                      )}
+
+                      <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mt-4 px-1">Todos os Candidatos ({matchedProperties.length})</h4>
+
+                      {matchedProperties.length === 0 ? (
+                          <div className="text-center py-12 text-slate-400">
+                              <Search size={48} className="mx-auto mb-2 opacity-30" />
+                              <p>Nenhum imóvel encontrado com os filtros atuais.</p>
+                          </div>
+                      ) : (
+                          matchedProperties.map(property => {
+                              const analysis = analysisResults[property.id];
+                              const isAnalyzing = analyzingPropertyId === property.id;
+                              const isSelected = selectedMatchIds.has(property.id);
+                              
+                              return (
+                                  <div key={property.id} className={`bg-white p-4 rounded-xl border shadow-sm flex flex-col md:flex-row gap-4 hover:shadow-md transition-all duration-200 ${isSelected ? 'border-primary-500 ring-1 ring-primary-500 bg-primary-50/10' : 'border-slate-200'}`}>
+                                      {/* Checkbox for selection */}
+                                      <div className="flex items-start pt-1">
+                                          <input 
+                                            type="checkbox" 
+                                            className="w-5 h-5 rounded border-slate-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                                            checked={isSelected}
+                                            onChange={() => toggleMatchSelection(property.id)}
+                                          />
+                                      </div>
+
+                                      <img src={property.images[0] || 'https://via.placeholder.com/150'} alt="" className="w-full md:w-32 h-32 object-cover rounded-lg bg-slate-200 cursor-pointer" onClick={() => toggleMatchSelection(property.id)} />
+                                      <div className="flex-1">
+                                          <div className="flex justify-between items-start">
+                                              <div>
+                                                  <h3 className="font-bold text-slate-800 cursor-pointer" onClick={() => toggleMatchSelection(property.id)}>{property.title}</h3>
+                                                  <p className="text-sm text-slate-500">{property.code} • {property.address}</p>
+                                              </div>
+                                              <div className="text-right">
+                                                  <div className="text-lg font-bold text-emerald-600">
+                                                      {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(property.price)}
+                                                  </div>
+                                                  <div className="flex gap-2 text-xs text-slate-500 justify-end mt-1">
+                                                      <span className="flex items-center gap-1"><Bed size={12}/> {property.bedrooms}</span>
+                                                      <span className="flex items-center gap-1"><Bath size={12}/> {property.bathrooms}</span>
+                                                      <span className="flex items-center gap-1"><Ruler size={12}/> {property.area}m²</span>
+                                                  </div>
+                                              </div>
+                                          </div>
+
+                                          <div className="mt-4 pt-4 border-t border-slate-100 flex items-center justify-between">
+                                              {/* AI Analysis Result */}
+                                              <div className="flex-1 mr-4">
+                                                  {analysis ? (
+                                                      <div className="animate-in fade-in slide-in-from-left-2">
+                                                          <div className="flex items-center gap-2 mb-1">
+                                                              <div className={`h-2 flex-1 rounded-full bg-slate-100 overflow-hidden max-w-[100px]`}>
+                                                                  <div 
+                                                                    className={`h-full ${analysis.score > 80 ? 'bg-green-500' : analysis.score > 50 ? 'bg-yellow-500' : 'bg-red-500'}`} 
+                                                                    style={{ width: `${analysis.score}%` }}
+                                                                  ></div>
+                                                              </div>
+                                                              <span className={`text-sm font-bold ${analysis.score > 80 ? 'text-green-600' : analysis.score > 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+                                                                  {analysis.score}% Match
+                                                              </span>
+                                                          </div>
+                                                          <p className="text-xs text-slate-600 italic">"{analysis.reason}"</p>
+                                                      </div>
+                                                  ) : (
+                                                      <p className="text-xs text-slate-400">Clique em analisar para ver a compatibilidade IA detalhada.</p>
+                                                  )}
+                                              </div>
+
+                                              <div className="flex gap-2">
+                                                  <Button 
+                                                    variant="secondary" 
+                                                    className="text-xs h-8 px-3"
+                                                    onClick={() => handleRunAiAnalysis(property)}
+                                                    disabled={isAnalyzing || !!analysis}
+                                                  >
+                                                      {isAnalyzing ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                                      {analysis ? 'Analisado' : 'Analisar IA'}
+                                                  </Button>
+                                                  <Button className="text-xs h-8 px-3" onClick={() => setViewProperty(property)}>
+                                                      Ver Detalhes
+                                                  </Button>
+                                              </div>
+                                          </div>
+                                      </div>
+                                  </div>
+                              )
+                          })
+                      )}
+                  </div>
+                  
+                  <div className="p-4 border-t border-slate-100 flex justify-between items-center bg-white rounded-b-2xl">
+                      <div className="text-sm text-slate-500">
+                          {selectedMatchIds.size > 0 
+                            ? <span className="font-bold text-primary-600">{selectedMatchIds.size} imóveis selecionados</span>
+                            : "Selecione imóveis para enviar ao cliente"
+                          }
+                      </div>
+                      <div className="flex gap-2">
+                          <Button variant="outline" onClick={() => setMatchModalOpen(false)}>Fechar</Button>
+                          {selectedMatchIds.size > 0 && (
+                              <Button className="bg-green-600 hover:bg-green-700 text-white gap-2" onClick={sendMatchesToWhatsapp}>
+                                  <MessageCircle size={18} /> Enviar WhatsApp
+                              </Button>
+                          )}
+                      </div>
+                  </div>
+              </div>
+          </div>
       )}
     </div>
   );

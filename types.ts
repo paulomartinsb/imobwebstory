@@ -1,7 +1,7 @@
 
 export type PropertyType = string; // Changed from union to string to allow dynamic types
 export type PropertyStatus = 'draft' | 'pending_approval' | 'published' | 'sold' | 'reserved' | 'inactive';
-export type UserRole = 'admin' | 'finance' | 'employee' | 'broker';
+export type UserRole = 'admin' | 'finance' | 'employee' | 'broker' | 'captator';
 export type LeadSource = string; // Changed from union to string to allow dynamic sources
 
 export interface User {
@@ -10,11 +10,20 @@ export interface User {
   email: string;
   role: UserRole;
   avatar: string;
+  blocked?: boolean; // New: Indica se o acesso está bloqueado
 }
 
 export interface PropertyTypeOption {
     value: string;
     label: string;
+}
+
+export interface LeadAgingConfig {
+    freshLimit: number; // Dias para considerar "Novo" (Verde)
+    warmLimit: number; // Dias para considerar "Morno" (Amarelo) - Acima disso é "Frio" (Vermelho)
+    freshColor: string; // ex: 'green', 'blue'
+    warmColor: string; // ex: 'yellow', 'orange'
+    coldColor: string; // ex: 'red', 'gray'
 }
 
 export interface SystemSettings {
@@ -27,6 +36,20 @@ export interface SystemSettings {
   leadSources: string[]; // Lista dinâmica de origens de leads
   availableLocations: string[]; // Lista dinâmica de bairros/cidades sugeridos
   propertyDescriptionPrompt: string; // Prompt editável para geração de descrição
+  
+  // Integração IA
+  geminiApiKey: string; // Chave da API do Google Gemini
+
+  // Integração Supabase (Banco de Dados)
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+
+  // Novos Prompts de CRM e Match
+  matchAiPrompt: string; // Prompt para cálculo de compatibilidade
+  crmGlobalInsightsPrompt: string; // Prompt para insights gerais do pipeline
+  crmCardInsightsPrompt: string; // Prompt para insights do lead individual
+
+  leadAging: LeadAgingConfig; // Configuração de cores por tempo
 }
 
 export interface Property {
@@ -53,9 +76,14 @@ export interface Property {
   city?: string;
   state?: string;
 
+  // Referral Fields (Captator specific)
+  ownerName?: string;
+  ownerPhone?: string;
+
   features: string[];
   status: PropertyStatus;
   images: string[]; // Changed from 'image: string' to support gallery (max 10)
+  createdAt?: string; // New field for date filtering
 }
 
 // Dynamic Pipeline Types

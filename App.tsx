@@ -11,6 +11,7 @@ import { SettingsPage } from './pages/SettingsPage';
 import { AdminPage } from './pages/AdminPage';
 import { PublicLeadFormPage } from './pages/PublicLeadFormPage';
 import { LoginPage } from './pages/LoginPage';
+import { ReferralPage } from './pages/ReferralPage';
 
 // Route Guard Component
 // Fix: Mark children as optional to resolve TypeScript error "Property 'children' is missing in type '{}'"
@@ -37,6 +38,14 @@ const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
 };
 
 function App() {
+  const { currentUser } = useStore();
+
+  // Helper to determine the "Home" page based on role
+  const getHomePage = () => {
+      if (currentUser?.role === 'captator') return <Navigate to="/referrals" replace />;
+      return <DashboardPage />;
+  }
+
   return (
     <HashRouter>
       <Routes>
@@ -56,7 +65,10 @@ function App() {
                 <Layout />
             </RequireAuth>
         }>
-          <Route index element={<DashboardPage />} />
+          <Route index element={getHomePage()} />
+          <Route path="referrals" element={<ReferralPage />} />
+          
+          {/* Rotas bloqueadas para captadores via menu, mas segurança adicional pode ser feita aqui se necessário */}
           <Route path="properties" element={<PropertiesPage />} />
           <Route path="leads" element={<LeadsPage />} />
           <Route path="crm" element={<CRMPage />} />

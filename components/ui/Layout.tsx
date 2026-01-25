@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus } from 'lucide-react';
+import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus, Send } from 'lucide-react';
 import { ToastContainer } from './Toast';
 import { useStore } from '../../store';
 
@@ -45,6 +45,7 @@ export const Layout: React.FC = () => {
           case 'finance': return 'Financeiro';
           case 'employee': return 'Funcionário';
           case 'broker': return 'Corretor';
+          case 'captator': return 'Indicador';
           default: return 'Usuário';
       }
   }
@@ -55,6 +56,7 @@ export const Layout: React.FC = () => {
           case 'finance': return 'bg-green-100 text-green-700 border-green-200';
           case 'employee': return 'bg-blue-100 text-blue-700 border-blue-200';
           case 'broker': return 'bg-amber-100 text-amber-700 border-amber-200';
+          case 'captator': return 'bg-orange-100 text-orange-700 border-orange-200';
           default: return 'bg-slate-100 text-slate-700';
       }
   }
@@ -89,20 +91,32 @@ export const Layout: React.FC = () => {
         </div>
 
         <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-2">Principal</div>
-          <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" />
-          <SidebarItem to="/leads" icon={UserPlus} label="Base de Leads" />
-          <SidebarItem to="/properties" icon={Building2} label="Imóveis" />
-          <SidebarItem to="/crm" icon={Users} label="CRM & Pipeline" />
-          
-          <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Sistema</div>
-          
-          {/* Admin Link - Only visible to Admins */}
-          {currentUser?.role === 'admin' && (
-             <SidebarItem to="/admin" icon={ShieldCheck} label="Administração" />
+          {currentUser?.role === 'captator' ? (
+              // Specific Menu for Referral Profile
+              <>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-2">Área do Parceiro</div>
+                  <SidebarItem to="/referrals" icon={Send} label="Indicar Imóveis" />
+                  <SidebarItem to="/settings" icon={Settings} label="Meu Perfil" />
+              </>
+          ) : (
+              // Default Menu for Other Roles
+              <>
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-2">Principal</div>
+                  <SidebarItem to="/" icon={LayoutDashboard} label="Dashboard" />
+                  <SidebarItem to="/leads" icon={UserPlus} label="Base de Leads" />
+                  <SidebarItem to="/properties" icon={Building2} label="Imóveis" />
+                  <SidebarItem to="/crm" icon={Users} label="CRM & Pipeline" />
+                  
+                  <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-6">Sistema</div>
+                  
+                  {/* Admin Link - Only visible to Admins */}
+                  {currentUser?.role === 'admin' && (
+                     <SidebarItem to="/admin" icon={ShieldCheck} label="Administração" />
+                  )}
+                  
+                  <SidebarItem to="/settings" icon={Settings} label="Configurações" />
+              </>
           )}
-          
-          <SidebarItem to="/settings" icon={Settings} label="Configurações" />
         </nav>
 
         <div className="p-4 border-t border-slate-800">

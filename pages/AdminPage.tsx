@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry } from '../types';
+import { syncEntityToSupabase } from '../services/supabaseClient';
 
 const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }) => {
     // Flatten helper or just display keys
@@ -101,20 +102,44 @@ const StringListManager: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-  const { currentUser, users, updateUserRole, systemSettings, updateSystemSettings, logs, restoreState } = useStore();
-  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs'>('users');
+  const { currentUser, users, updateUserRole, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, addNotification } = useStore();
+  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs' | 'database'>('users');
   
   // Local state for settings form
   const [settingsForm, setSettingsForm] = useState(systemSettings);
   const [logSearch, setLogSearch] = useState('');
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
 
+  // New User Modal State
+  const [isAddUserOpen, setIsAddUserOpen] = useState(false);
+  const [newUser, setNewUser] = useState({ name: '', email: '', role: 'employee' as UserRole });
+
+  // Sync State
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncLog, setSyncLog] = useState<string[]>([]);
+
   // Property Config States
   const [newTypeLabel, setNewTypeLabel] = useState('');
-  const [newFeature, setNewFeature] = useState('');
   
   // AI Prompt State
   const [promptText, setPromptText] = useState(systemSettings.propertyDescriptionPrompt);
+  
+  // CRM AI Prompts State
+  const [crmPrompts, setCrmPrompts] = useState({
+      matchAi: systemSettings.matchAiPrompt,
+      crmGlobal: systemSettings.crmGlobalInsightsPrompt,
+      crmCard: systemSettings.crmCardInsightsPrompt
+  });
+  const [activeCrmPromptTab, setActiveCrmPromptTab] = useState<'match' | 'global' | 'card'>('match');
+
+  // Lead Aging State
+  const [agingConfig, setAgingConfig] = useState(systemSettings.leadAging || {
+      freshLimit: 2,
+      warmLimit: 7,
+      freshColor: 'green',
+      warmColor: 'yellow',
+      coldColor: 'red'
+  });
 
   // Security Check
   if (currentUser?.role !== 'admin') {
@@ -128,6 +153,40 @@ export const AdminPage: React.FC = () => {
   const handlePromptSave = () => {
       updateSystemSettings({ propertyDescriptionPrompt: promptText });
   };
+
+  const handleCrmPromptsSave = () => {
+      updateSystemSettings({ 
+          matchAiPrompt: crmPrompts.matchAi,
+          crmGlobalInsightsPrompt: crmPrompts.crmGlobal,
+          crmCardInsightsPrompt: crmPrompts.crmCard
+      });
+  };
+
+  const handleAgingSave = () => {
+      updateSystemSettings({ leadAging: agingConfig });
+  };
+
+  const handleAddUser = () => {
+      if(!newUser.name || !newUser.email) {
+          addNotification('error', 'Nome e email são obrigatórios.');
+          return;
+      }
+      const success = addUser(newUser);
+      if (success) {
+          setIsAddUserOpen(false);
+          setNewUser({ name: '', email: '', role: 'employee' });
+      }
+  };
+
+  const handleRemoveUser = (id: string) => {
+      if(window.confirm('Tem certeza que deseja remover este usuário?')) {
+          removeUser(id);
+      }
+  };
+
+  const handleToggleBlock = (id: string) => {
+      toggleUserBlock(id);
+  }
 
   const addPropertyType = () => {
       if(!newTypeLabel.trim()) return;
@@ -147,13 +206,12 @@ export const AdminPage: React.FC = () => {
       }
   }
 
-  const addFeature = () => {
-      if(!newFeature.trim()) return;
-      if(systemSettings.propertyFeatures.includes(newFeature)) return;
+  const addFeature = (val: string) => {
+      if(!val.trim()) return;
+      if(systemSettings.propertyFeatures.includes(val)) return;
       
-      const updatedFeatures = [...systemSettings.propertyFeatures, newFeature];
+      const updatedFeatures = [...systemSettings.propertyFeatures, val];
       updateSystemSettings({ propertyFeatures: updatedFeatures });
-      setNewFeature('');
   }
 
   const removeFeature = (feat: string) => {
@@ -186,12 +244,115 @@ export const AdminPage: React.FC = () => {
       }
   }
 
+  // --- Database Seed ---
+  const handleSeedDatabase = async () => {
+      if (!window.confirm("Isso tentará inserir TODOS os dados locais atuais (imóveis e clientes) no Supabase. Continuar?")) return;
+      
+      setIsSyncing(true);
+      setSyncLog(['Iniciando sincronização...']);
+      
+      let successCount = 0;
+      let errorCount = 0;
+
+      // Sync Properties
+      for (const p of properties) {
+          const res = await syncEntityToSupabase('properties', p);
+          if (res.error) {
+              setSyncLog(prev => [...prev, `Erro Imóvel ${p.id}: ${JSON.stringify(res.error)}`]);
+              errorCount++;
+          } else {
+              successCount++;
+          }
+      }
+
+      // Sync Clients
+      for (const c of clients) {
+          const res = await syncEntityToSupabase('clients', c);
+          if (res.error) {
+              setSyncLog(prev => [...prev, `Erro Cliente ${c.id}: ${JSON.stringify(res.error)}`]);
+              errorCount++;
+          } else {
+              successCount++;
+          }
+      }
+
+      setSyncLog(prev => [...prev, `Finalizado. Sucesso: ${successCount}, Erros: ${errorCount}`]);
+      setIsSyncing(false);
+      
+      if(errorCount === 0) {
+          addNotification('success', 'Sincronização concluída com sucesso!');
+      } else {
+          addNotification('info', 'Sincronização concluída com erros. Verifique o log.');
+      }
+  };
+
+  const copySqlSchema = () => {
+      const sql = `
+-- Crie estas tabelas no Supabase SQL Editor para usar o sistema
+
+create table if not exists properties (
+  id text primary key,
+  content jsonb not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+create table if not exists clients (
+  id text primary key,
+  content jsonb not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+create table if not exists logs (
+  id text primary key,
+  content jsonb not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- Ativar RLS (Opcional, mas recomendado para produção real)
+alter table properties enable row level security;
+alter table clients enable row level security;
+alter table logs enable row level security;
+
+-- Política simples (DEV ONLY): Permitir tudo para publico (anon)
+-- Em produção, substitua por políticas de auth.uid()
+create policy "Allow all access for anon" on properties for all using (true) with check (true);
+create policy "Allow all access for anon" on clients for all using (true) with check (true);
+create policy "Allow all access for anon" on logs for all using (true) with check (true);
+      `;
+      navigator.clipboard.writeText(sql);
+      addNotification('success', 'SQL copiado para a área de transferência!');
+  };
+
   const roleOptions: { value: UserRole; label: string }[] = [
       { value: 'admin', label: 'Administrador' },
       { value: 'finance', label: 'Financeiro' },
       { value: 'employee', label: 'Funcionário' },
       { value: 'broker', label: 'Corretor' },
+      { value: 'captator', label: 'Captador (Parceiro)' },
   ];
+
+  const colorOptions = [
+      { value: 'green', label: 'Verde (Green)' },
+      { value: 'yellow', label: 'Amarelo (Yellow)' },
+      { value: 'red', label: 'Vermelho (Red)' },
+      { value: 'blue', label: 'Azul (Blue)' },
+      { value: 'purple', label: 'Roxo (Purple)' },
+      { value: 'gray', label: 'Cinza (Gray)' },
+      { value: 'orange', label: 'Laranja (Orange)' },
+  ];
+
+  const getColorClass = (colorName: string) => {
+      const map: Record<string, string> = {
+          'green': 'bg-green-100 text-green-700 border-green-200',
+          'yellow': 'bg-yellow-100 text-yellow-700 border-yellow-200',
+          'red': 'bg-red-100 text-red-700 border-red-200',
+          'blue': 'bg-blue-100 text-blue-700 border-blue-200',
+          'purple': 'bg-purple-100 text-purple-700 border-purple-200',
+          'gray': 'bg-slate-100 text-slate-700 border-slate-200',
+          'orange': 'bg-orange-100 text-orange-700 border-orange-200',
+      };
+      return map[colorName] || map['gray'];
+  }
 
   const filteredLogs = logs.filter(log => 
       log.entityName.toLowerCase().includes(logSearch.toLowerCase()) || 
@@ -228,6 +389,9 @@ export const AdminPage: React.FC = () => {
           <button onClick={() => setActiveTab('system')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'system' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               <div className="flex items-center gap-2"><Settings size={18} /> Sistema</div>
           </button>
+          <button onClick={() => setActiveTab('database')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'database' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
+              <div className="flex items-center gap-2"><Database size={18} /> Banco de Dados</div>
+          </button>
            <button onClick={() => setActiveTab('properties')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'properties' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               <div className="flex items-center gap-2"><Building2 size={18} /> Imóveis</div>
           </button>
@@ -241,9 +405,14 @@ export const AdminPage: React.FC = () => {
 
       {activeTab === 'users' && (
           <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-100">
-                  <h2 className="text-lg font-semibold text-slate-800">Controle de Acesso (RBAC)</h2>
-                  <p className="text-sm text-slate-500">Altere as permissões de acesso de qualquer usuário cadastrado.</p>
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                  <div>
+                      <h2 className="text-lg font-semibold text-slate-800">Controle de Acesso (RBAC)</h2>
+                      <p className="text-sm text-slate-500">Gerencie usuários e suas permissões.</p>
+                  </div>
+                  <Button onClick={() => setIsAddUserOpen(true)}>
+                      <UserPlus size={18} className="mr-2" /> Novo Usuário
+                  </Button>
               </div>
               <div className="overflow-x-auto">
                   <table className="w-full text-left text-sm text-slate-600">
@@ -252,15 +421,18 @@ export const AdminPage: React.FC = () => {
                               <th className="px-6 py-4">Usuário</th>
                               <th className="px-6 py-4">Email</th>
                               <th className="px-6 py-4">Nível de Permissão Atual</th>
-                              <th className="px-6 py-4">Ação</th>
+                              <th className="px-6 py-4 text-right">Ação</th>
                           </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                           {users.map(user => (
-                              <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                              <tr key={user.id} className={`hover:bg-slate-50 transition-colors ${user.blocked ? 'bg-red-50/50' : ''}`}>
                                   <td className="px-6 py-4 flex items-center gap-3">
-                                      <img src={user.avatar} className="w-8 h-8 rounded-full" alt="" />
-                                      <span className="font-medium">{user.name}</span>
+                                      <img src={user.avatar} className={`w-8 h-8 rounded-full ${user.blocked ? 'grayscale opacity-50' : ''}`} alt="" />
+                                      <div>
+                                          <span className={`font-medium block ${user.blocked ? 'text-red-700 line-through' : ''}`}>{user.name}</span>
+                                          {user.blocked && <span className="text-[10px] text-red-600 font-bold uppercase">Acesso Bloqueado</span>}
+                                      </div>
                                       {currentUser.id === user.id && <Badge color="blue">Você</Badge>}
                                   </td>
                                   <td className="px-6 py-4">{user.email}</td>
@@ -270,20 +442,38 @@ export const AdminPage: React.FC = () => {
                                           user.role === 'broker' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
                                           'bg-slate-50 text-slate-700 border-slate-200'}
                                       `}>
-                                          {user.role}
+                                          {user.role === 'captator' ? 'Captador' : user.role}
                                       </span>
                                   </td>
-                                  <td className="px-6 py-4">
+                                  <td className="px-6 py-4 flex justify-end gap-2">
                                       <select 
                                         value={user.role}
                                         onChange={(e) => updateUserRole(user.id, e.target.value as UserRole)}
-                                        disabled={user.role === 'admin' && users.filter(u => u.role === 'admin').length === 1} // Prevent lockout
-                                        className="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-full p-2.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        disabled={user.blocked || (user.role === 'admin' && users.filter(u => u.role === 'admin').length === 1)} // Prevent lockout
+                                        className="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block p-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                       >
                                           {roleOptions.map(opt => (
                                               <option key={opt.value} value={opt.value}>{opt.label}</option>
                                           ))}
                                       </select>
+                                      {user.id !== currentUser.id && (
+                                          <>
+                                              <button 
+                                                onClick={() => handleToggleBlock(user.id)}
+                                                className={`p-2 rounded transition-colors ${user.blocked ? 'text-green-500 hover:bg-green-50' : 'text-orange-400 hover:bg-orange-50'}`}
+                                                title={user.blocked ? "Desbloquear Acesso" : "Bloquear Acesso"}
+                                              >
+                                                  {user.blocked ? <Unlock size={18} /> : <Lock size={18} />}
+                                              </button>
+                                              <button 
+                                                onClick={() => handleRemoveUser(user.id)}
+                                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                title="Remover Usuário"
+                                              >
+                                                  <Trash2 size={18} />
+                                              </button>
+                                          </>
+                                      )}
                                   </td>
                               </tr>
                           ))}
@@ -293,9 +483,121 @@ export const AdminPage: React.FC = () => {
           </Card>
       )}
 
+      {/* Add User Modal */}
+      {isAddUserOpen && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+              <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
+                      <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                          <UserPlus size={20} className="text-primary-600"/> Novo Usuário
+                      </h2>
+                      <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
+                  </div>
+                  <div className="p-6 space-y-4">
+                      <Input 
+                        label="Nome" 
+                        placeholder="Ex: Maria Silva" 
+                        value={newUser.name}
+                        onChange={e => setNewUser({...newUser, name: e.target.value})}
+                      />
+                      <Input 
+                        label="Email" 
+                        type="email"
+                        placeholder="Ex: maria@imob.com" 
+                        value={newUser.email}
+                        onChange={e => setNewUser({...newUser, email: e.target.value})}
+                      />
+                      <div>
+                          <label className="text-sm font-medium text-slate-700 block mb-1">Permissão / Função</label>
+                          <select 
+                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20"
+                            value={newUser.role}
+                            onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}
+                          >
+                              {roleOptions.map(opt => (
+                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                          </select>
+                      </div>
+                      <div className="bg-blue-50 p-3 rounded text-xs text-blue-700">
+                          A senha padrão será <strong>123456</strong>. O usuário poderá alterá-la no primeiro acesso (simulado).
+                      </div>
+                  </div>
+                  <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-2xl">
+                      <Button variant="outline" onClick={() => setIsAddUserOpen(false)} className="text-xs h-9">Cancelar</Button>
+                      <Button onClick={handleAddUser} className="text-xs h-9">Criar Usuário</Button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* ... (Rest of component remains unchanged) ... */}
       {activeTab === 'system' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="col-span-2 space-y-6">
+                  
+                  {/* Supabase Integration Card */}
+                  <Card className="p-6 border-l-4 border-l-emerald-500">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Database size={20} className="text-emerald-600" /> Banco de Dados em Nuvem (Supabase)
+                      </h3>
+                      <div className="space-y-4">
+                          <div className="flex flex-col space-y-1">
+                              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                  URL do Projeto
+                              </label>
+                              <Input 
+                                placeholder="https://xyz.supabase.co" 
+                                value={settingsForm.supabaseUrl || ''}
+                                onChange={(e) => setSettingsForm({...settingsForm, supabaseUrl: e.target.value})}
+                              />
+                          </div>
+                          <div className="flex flex-col space-y-1">
+                              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                  Chave Pública (Anon Key)
+                              </label>
+                              <Input 
+                                type="password"
+                                placeholder="eyJh..." 
+                                value={settingsForm.supabaseAnonKey || ''}
+                                onChange={(e) => setSettingsForm({...settingsForm, supabaseAnonKey: e.target.value})}
+                              />
+                              <p className="text-xs text-slate-500 mt-1">
+                                  Essas credenciais permitem sincronizar seus dados na nuvem para acesso multi-dispositivo.
+                                  <a href="https://supabase.com/dashboard/project/_/settings/api" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline ml-1">
+                                      Onde encontrar?
+                                  </a>
+                              </p>
+                          </div>
+                      </div>
+                  </Card>
+
+                  {/* Google Gemini Integration Card */}
+                  <Card className="p-6 border-l-4 border-l-indigo-500">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Sparkles size={20} className="text-indigo-600" /> Integração Inteligência Artificial
+                      </h3>
+                      <div className="space-y-4">
+                          <div className="flex flex-col space-y-1">
+                              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                  <Key size={14} className="text-slate-400" /> Chave da API (Gemini API Key)
+                              </label>
+                              <Input 
+                                type="password"
+                                placeholder="Cole sua chave aqui (ex: AIzaSy...)" 
+                                value={settingsForm.geminiApiKey || ''}
+                                onChange={(e) => setSettingsForm({...settingsForm, geminiApiKey: e.target.value})}
+                              />
+                              <p className="text-xs text-slate-500 mt-1">
+                                  Necessário para gerar descrições, calcular compatibilidade (match) e fornecer insights de leads.
+                                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline ml-1">
+                                      Obter chave
+                                  </a>
+                              </p>
+                          </div>
+                      </div>
+                  </Card>
+
                   <Card className="p-6">
                       <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                           <Settings size={20} className="text-slate-500" /> Geral
@@ -377,11 +679,72 @@ export const AdminPage: React.FC = () => {
                       </p>
                       <ul className="text-sm text-slate-600 space-y-2 list-disc list-inside">
                           <li>Admins têm acesso total.</li>
+                          <li>A chave de API é essencial para funcionalidades de IA.</li>
                           <li>A aprovação de imóveis afeta apenas Corretores.</li>
                           <li>Modo manutenção exibe tela de bloqueio.</li>
                       </ul>
                   </Card>
               </div>
+          </div>
+      )}
+
+      {activeTab === 'database' && (
+          <div className="space-y-6">
+              <Card className="p-6 border-l-4 border-l-emerald-600">
+                  <div className="flex justify-between items-start mb-4">
+                      <div>
+                          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <Database className="text-emerald-600" size={20} />
+                              Instalação e Migração
+                          </h3>
+                          <p className="text-sm text-slate-500">Ferramentas para configurar o banco de dados Supabase.</p>
+                      </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Step 1 */}
+                      <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                              <span className="bg-slate-200 text-slate-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
+                              Criar Tabelas (SQL)
+                          </h4>
+                          <p className="text-xs text-slate-500 mb-4">
+                              Copie o código SQL abaixo e execute no painel do Supabase (SQL Editor) para criar a estrutura necessária.
+                          </p>
+                          <Button variant="outline" className="w-full gap-2 text-sm" onClick={copySqlSchema}>
+                              <Code size={16} /> Copiar SQL
+                          </Button>
+                      </div>
+
+                      {/* Step 2 */}
+                      <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                          <h4 className="font-bold text-slate-700 mb-2 flex items-center gap-2">
+                              <span className="bg-slate-200 text-slate-600 w-6 h-6 rounded-full flex items-center justify-center text-xs">2</span>
+                              Popular Banco (Seed)
+                          </h4>
+                          <p className="text-xs text-slate-500 mb-4">
+                              Envia todos os dados locais atuais (Imóveis, Clientes) para o Supabase configurado. Use com cuidado.
+                          </p>
+                          <Button 
+                            className="w-full gap-2 text-sm bg-emerald-600 hover:bg-emerald-700" 
+                            onClick={handleSeedDatabase}
+                            isLoading={isSyncing}
+                          >
+                              <RefreshCcw size={16} /> Enviar Dados Locais para o Banco
+                          </Button>
+                      </div>
+                  </div>
+
+                  {/* Log Area */}
+                  {syncLog.length > 0 && (
+                      <div className="mt-6 bg-slate-900 text-slate-300 p-4 rounded-lg font-mono text-xs max-h-40 overflow-y-auto">
+                          <p className="text-slate-500 font-bold mb-2 uppercase border-b border-slate-700 pb-1">Log de Sincronização:</p>
+                          {syncLog.map((line, idx) => (
+                              <div key={idx} className="mb-1">{line}</div>
+                          ))}
+                      </div>
+                  )}
+              </Card>
           </div>
       )}
 
@@ -434,7 +797,7 @@ export const AdminPage: React.FC = () => {
                       <div>
                           <h2 className="text-lg font-bold text-indigo-900 flex items-center gap-2">
                               <Sparkles className="text-indigo-600" size={20} />
-                              Prompt da Inteligência Artificial
+                              Prompt da Inteligência Artificial (Descrição de Imóveis)
                           </h2>
                           <p className="text-sm text-slate-500">Personalize como a IA gera as descrições dos imóveis.</p>
                       </div>
@@ -463,24 +826,235 @@ export const AdminPage: React.FC = () => {
       )}
 
       {activeTab === 'crm' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <StringListManager 
-                  title="Origens de Lead (Sources)"
-                  description="Opções para o campo 'Origem' no cadastro de leads."
-                  items={systemSettings.leadSources}
-                  onAdd={addLeadSource}
-                  onRemove={removeLeadSource}
-                  placeholder="Nova origem (ex: Evento)"
-              />
-              
-              <StringListManager 
-                  title="Localizações Sugeridas"
-                  description="Bairros ou cidades que aparecem no autocomplete."
-                  items={systemSettings.availableLocations}
-                  onAdd={addLocation}
-                  onRemove={removeLocation}
-                  placeholder="Cidade - Bairro (ex: SP - Moema)"
-              />
+          <div className="space-y-6">
+              {/* AI Prompts Section */}
+              <Card className="p-6 border-l-4 border-l-purple-500">
+                  <div className="flex items-center justify-between mb-6">
+                      <div>
+                          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <Sparkles className="text-purple-600" size={20} />
+                              Configuração de IA do CRM
+                          </h2>
+                          <p className="text-sm text-slate-500">Personalize os prompts usados para gerar insights e compatibilidade no CRM.</p>
+                      </div>
+                      <Button onClick={handleCrmPromptsSave} className="gap-2">
+                          <Save size={18} /> Salvar Prompts
+                      </Button>
+                  </div>
+
+                  <div className="flex gap-4 mb-4 border-b border-slate-200">
+                      <button 
+                        onClick={() => setActiveCrmPromptTab('match')} 
+                        className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeCrmPromptTab === 'match' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                      >
+                          Match IA
+                      </button>
+                      <button 
+                        onClick={() => setActiveCrmPromptTab('global')} 
+                        className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeCrmPromptTab === 'global' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                      >
+                          Insights Globais (Pipeline)
+                      </button>
+                      <button 
+                        onClick={() => setActiveCrmPromptTab('card')} 
+                        className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeCrmPromptTab === 'card' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                      >
+                          Insights do Card (Lead)
+                      </button>
+                  </div>
+
+                  {/* Dynamic Editor Content */}
+                  <div>
+                      {activeCrmPromptTab === 'match' && (
+                          <div className="animate-in fade-in duration-200">
+                              <p className="text-xs text-slate-500 mb-2">
+                                  Este prompt é usado quando você clica em "Match (IA)" no card do lead. Ele compara o perfil do cliente com um imóvel específico.
+                              </p>
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                  <span className="text-xs font-semibold text-slate-600 mr-2">Variáveis Cliente:</span>
+                                  {['{{clientName}}', '{{budget}}', '{{interest}}', '{{locations}}', '{{minBedrooms}}', '{{minArea}}', '{{notes}}'].map(tag => (
+                                      <code key={tag} className="px-1.5 py-0.5 bg-purple-50 border border-purple-100 rounded text-[10px] text-purple-700 font-mono">{tag}</code>
+                                  ))}
+                                  <span className="text-xs font-semibold text-slate-600 ml-4 mr-2">Variáveis Imóvel:</span>
+                                  {['{{propertyTitle}}', '{{propertyType}}', '{{propertyPrice}}', '{{propertyAddress}}', '{{propertyBedrooms}}', '{{propertyArea}}', '{{propertyFeatures}}'].map(tag => (
+                                      <code key={tag} className="px-1.5 py-0.5 bg-blue-50 border border-blue-100 rounded text-[10px] text-blue-700 font-mono">{tag}</code>
+                                  ))}
+                              </div>
+                              <textarea 
+                                  className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-sm leading-relaxed text-slate-700"
+                                  value={crmPrompts.matchAi}
+                                  onChange={(e) => setCrmPrompts({...crmPrompts, matchAi: e.target.value})}
+                                  spellCheck={false}
+                              />
+                          </div>
+                      )}
+
+                      {activeCrmPromptTab === 'global' && (
+                          <div className="animate-in fade-in duration-200">
+                              <p className="text-xs text-slate-500 mb-2">
+                                  Este prompt gera os insights gerais do pipeline (botão "Insights IA" no topo do CRM).
+                              </p>
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                  <span className="text-xs font-semibold text-slate-600 mr-2">Variável Obrigatória:</span>
+                                  <code className="px-1.5 py-0.5 bg-green-50 border border-green-100 rounded text-[10px] text-green-700 font-mono">{'{{pipelineData}}'}</code>
+                                  <span className="text-xs text-slate-400 ml-2">(Contém um JSON resumido de todos os leads do pipeline)</span>
+                              </div>
+                              <textarea 
+                                  className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-sm leading-relaxed text-slate-700"
+                                  value={crmPrompts.crmGlobal}
+                                  onChange={(e) => setCrmPrompts({...crmPrompts, crmGlobal: e.target.value})}
+                                  spellCheck={false}
+                              />
+                          </div>
+                      )}
+
+                      {activeCrmPromptTab === 'card' && (
+                          <div className="animate-in fade-in duration-200">
+                              <p className="text-xs text-slate-500 mb-2">
+                                  Este prompt gera a estratégia comercial individual para um lead (ícone de brilho no card).
+                              </p>
+                              <div className="flex flex-wrap gap-2 mb-3">
+                                  <span className="text-xs font-semibold text-slate-600 mr-2">Variáveis:</span>
+                                  {['{{clientName}}', '{{createdAt}}', '{{lastContact}}', '{{visitsHistory}}', '{{interest}}', '{{locations}}', '{{budget}}', '{{matchingProperties}}'].map(tag => (
+                                      <code key={tag} className="px-1.5 py-0.5 bg-purple-50 border border-purple-100 rounded text-[10px] text-purple-700 font-mono">{tag}</code>
+                                  ))}
+                              </div>
+                              <textarea 
+                                  className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-sm leading-relaxed text-slate-700"
+                                  value={crmPrompts.crmCard}
+                                  onChange={(e) => setCrmPrompts({...crmPrompts, crmCard: e.target.value})}
+                                  spellCheck={false}
+                              />
+                          </div>
+                      )}
+                  </div>
+              </Card>
+
+              {/* Lead Aging Config */}
+              <Card className="p-6 border-l-4 border-l-blue-500">
+                  <div className="flex items-center justify-between mb-6">
+                      <div>
+                          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <Clock className="text-blue-600" size={20} />
+                              Configuração de Envelhecimento de Leads
+                          </h2>
+                          <p className="text-sm text-slate-500">Defina as cores e o tempo para o status visual dos leads no Kanban.</p>
+                      </div>
+                      <Button onClick={handleAgingSave} className="gap-2">
+                          <Save size={18} /> Salvar Regras
+                      </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      {/* Fresh / Novo */}
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                              1. Fase Inicial (Novo)
+                          </h4>
+                          <div className="space-y-3">
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 uppercase">Até quantos dias?</label>
+                                  <Input 
+                                    type="number" 
+                                    value={agingConfig.freshLimit}
+                                    onChange={e => setAgingConfig({...agingConfig, freshLimit: Number(e.target.value)})}
+                                  />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 uppercase">Cor</label>
+                                  <select 
+                                    className="w-full px-2 py-2 rounded-lg border border-slate-200 text-sm"
+                                    value={agingConfig.freshColor}
+                                    onChange={e => setAgingConfig({...agingConfig, freshColor: e.target.value})}
+                                  >
+                                      {colorOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                  </select>
+                              </div>
+                              <div className={`mt-2 p-2 rounded text-center text-xs font-bold border ${getColorClass(agingConfig.freshColor)}`}>
+                                  Visualização
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* Warm / Morno */}
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                              2. Fase Intermediária (Morno)
+                          </h4>
+                          <div className="space-y-3">
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 uppercase">Até quantos dias?</label>
+                                  <Input 
+                                    type="number" 
+                                    value={agingConfig.warmLimit}
+                                    onChange={e => setAgingConfig({...agingConfig, warmLimit: Number(e.target.value)})}
+                                  />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 uppercase">Cor</label>
+                                  <select 
+                                    className="w-full px-2 py-2 rounded-lg border border-slate-200 text-sm"
+                                    value={agingConfig.warmColor}
+                                    onChange={e => setAgingConfig({...agingConfig, warmColor: e.target.value})}
+                                  >
+                                      {colorOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                  </select>
+                              </div>
+                              <div className={`mt-2 p-2 rounded text-center text-xs font-bold border ${getColorClass(agingConfig.warmColor)}`}>
+                                  Visualização
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* Cold / Frio */}
+                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
+                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                              3. Fase Avançada (Frio)
+                          </h4>
+                          <div className="space-y-3">
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 uppercase">Tempo</label>
+                                  <div className="px-3 py-2 bg-slate-200 rounded text-slate-600 text-sm italic">
+                                      Acima de {agingConfig.warmLimit} dias
+                                  </div>
+                              </div>
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 uppercase">Cor</label>
+                                  <select 
+                                    className="w-full px-2 py-2 rounded-lg border border-slate-200 text-sm"
+                                    value={agingConfig.coldColor}
+                                    onChange={e => setAgingConfig({...agingConfig, coldColor: e.target.value})}
+                                  >
+                                      {colorOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                                  </select>
+                              </div>
+                              <div className={`mt-2 p-2 rounded text-center text-xs font-bold border ${getColorClass(agingConfig.coldColor)}`}>
+                                  Visualização
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </Card>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <StringListManager 
+                      title="Origens de Lead (Sources)"
+                      description="Opções para o campo 'Origem' no cadastro de leads."
+                      items={systemSettings.leadSources}
+                      onAdd={addLeadSource}
+                      onRemove={removeLeadSource}
+                      placeholder="Nova origem (ex: Evento)"
+                  />
+                  
+                  <StringListManager 
+                      title="Localizações Sugeridas"
+                      description="Bairros ou cidades que aparecem no autocomplete."
+                      items={systemSettings.availableLocations}
+                      onAdd={addLocation}
+                      onRemove={removeLocation}
+                      placeholder="Cidade - Bairro (ex: SP - Moema)"
+                  />
+              </div>
           </div>
       )}
 
