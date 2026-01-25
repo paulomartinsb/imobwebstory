@@ -1,29 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
-import { useStore } from '../store';
 
-// Helper to get client only when needed to ensure we use latest settings
-export const getSupabase = () => {
-    const settings = useStore.getState().systemSettings;
-    const url = settings.supabaseUrl;
-    const key = settings.supabaseAnonKey;
-
+// Helper to get client dynamically with passed credentials
+export const getSupabase = (url: string, key: string) => {
     if (!url || !key) {
         return null;
     }
-
     return createClient(url, key);
 };
 
 // Generic insert/upsert for "Document Store" style
-// We will store main entities as JSONB in a 'content' column to preserve the exact TS structure
-// Tables required: 'properties', 'clients', 'logs', 'pipelines'
+export const syncEntityToSupabase = async (table: string, data: any, url: string, key: string) => {
+    const supabase = getSupabase(url, key);
+    if (!supabase) return { error: 'Supabase não configurado (URL ou Key ausentes)' };
 
-export const syncEntityToSupabase = async (table: string, data: any) => {
-    const supabase = getSupabase();
-    if (!supabase) return { error: 'Supabase não configurado' };
-
-    // We assume the table has an 'id' column and a 'content' jsonb column
-    // We upsert the whole object into 'content' and set the explicit 'id'
     const payload = {
         id: data.id,
         content: data,
@@ -37,17 +26,26 @@ export const syncEntityToSupabase = async (table: string, data: any) => {
     return { error };
 };
 
-export const fetchEntitiesFromSupabase = async (table: string) => {
-    const supabase = getSupabase();
+export const fetchEntitiesFromSupabase = async (table: string, url: string, key: string) => {
+    const supabase = getSupabase(url, key);
     if (!supabase) return { data: null, error: 'Supabase não configurado' };
 
-    const { data, error } = await supabase
-        .from(table)
-        .select('*');
+    try {
+        const { data, error } = await supabase
+            .from(table)
+            .select('*');
 
-    if (error) return { data: null, error };
+        if (error) {
+            // If table doesn't exist yet, it's not a critical error for the app flow, just return empty
+            console.warn(`Erro ao buscar tabela ${table}:`, error.message);
+            return { data: [], error };
+        }
 
-    // Unwrap content
-    const entities = data.map((row: any) => row.content);
-    return { data: entities, error: null };
+        // Unwrap content
+        const entities = data.map((row: any) => row.content);
+        return { data: entities, error: null };
+    } catch (err) {
+        console.error(err);
+        return { data: [], error: err };
+    }
 };

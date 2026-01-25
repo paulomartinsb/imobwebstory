@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
@@ -102,7 +102,7 @@ const StringListManager: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-  const { currentUser, users, updateUserRole, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification } = useStore();
+  const { currentUser, users, updateUserRole, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification, loadFromSupabase } = useStore();
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs' | 'database'>('users');
   
   // Local state for settings form
@@ -248,6 +248,14 @@ export const AdminPage: React.FC = () => {
   const handleSeedDatabase = async () => {
       if (!window.confirm("ATENÇÃO: Isso enviará TODOS os dados locais (Imóveis, Clientes, Usuários, Pipelines, Logs) para o banco de dados. Certifique-se que as tabelas foram criadas. Continuar?")) return;
       
+      const url = systemSettings.supabaseUrl;
+      const key = systemSettings.supabaseAnonKey;
+
+      if (!url || !key) {
+          addNotification('error', 'Configure as credenciais do Supabase na aba Sistema primeiro.');
+          return;
+      }
+
       setIsSyncing(true);
       setSyncLog(['Iniciando backup completo para nuvem...']);
       
@@ -258,7 +266,7 @@ export const AdminPage: React.FC = () => {
       const syncList = async (list: any[], tableName: string, label: string) => {
           setSyncLog(prev => [...prev, `Sincronizando ${label}... (${list.length} itens)`]);
           for (const item of list) {
-              const res = await syncEntityToSupabase(tableName, item);
+              const res = await syncEntityToSupabase(tableName, item, url, key);
               if (res.error) {
                   setSyncLog(prev => [...prev, `[ERRO] ${label} ID ${item.id}: ${JSON.stringify(res.error)}`]);
                   errorCount++;
@@ -291,6 +299,17 @@ export const AdminPage: React.FC = () => {
       } else {
           addNotification('info', 'Backup concluído com alertas. Verifique o log.');
       }
+  };
+
+  const handlePullDatabase = async () => {
+      if(!window.confirm("Isso irá SUBSTITUIR os dados locais pelos dados da nuvem. Use com cuidado. Continuar?")) return;
+      
+      setIsSyncing(true);
+      setSyncLog(['Baixando dados da nuvem...']);
+      await loadFromSupabase();
+      setSyncLog(prev => [...prev, 'Concluído. O sistema foi atualizado.']);
+      setIsSyncing(false);
+      addNotification('success', 'Dados sincronizados da nuvem.');
   };
 
   const copySqlSchema = () => {
@@ -779,28 +798,33 @@ create policy "Public Access Logs" on logs for all using (true) with check (true
                       <div className="space-y-4">
                           <div className="flex items-center gap-3 mb-2">
                               <span className="bg-slate-200 text-slate-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">2</span>
-                              <h4 className="font-bold text-slate-700 text-lg">Popular com Dados de Todas as Etapas</h4>
+                              <h4 className="font-bold text-slate-700 text-lg">Sincronização de Dados</h4>
                           </div>
                           <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 h-full flex flex-col justify-between">
                               <div className="mb-4">
                                   <div className="flex items-center gap-2 text-slate-800 font-semibold mb-2">
-                                      <UploadCloud size={18} /> Sincronização (Seed)
+                                      <RefreshCcw size={18} /> Nuvem
                                   </div>
                                   <p className="text-sm text-slate-600 leading-relaxed">
-                                      Envia <strong>todo o banco de dados local</strong> atual para a nuvem. Isso inclui configurações de CRM, usuários, histórico e leads em todas as etapas.
+                                      Escolha a direção da sincronização. Você pode enviar seus dados locais para a nuvem (Backup) ou baixar os dados da nuvem para este dispositivo (Restaurar).
                                   </p>
-                                  <div className="mt-3 p-2 bg-yellow-50 border border-yellow-100 rounded text-xs text-yellow-800 flex gap-2">
-                                      <AlertTriangle size={14} className="shrink-0 mt-0.5"/>
-                                      Use isso apenas para backup inicial ou migração completa.
-                                  </div>
                               </div>
-                              <Button 
-                                className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20" 
-                                onClick={handleSeedDatabase}
-                                isLoading={isSyncing}
-                              >
-                                  <RefreshCcw size={18} /> Popular Tudo Agora
-                              </Button>
+                              <div className="flex flex-col gap-3">
+                                  <Button 
+                                    className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20" 
+                                    onClick={handleSeedDatabase}
+                                    isLoading={isSyncing}
+                                  >
+                                      <UploadCloud size={18} /> Enviar (Backup Local -> Nuvem)
+                                  </Button>
+                                  <Button 
+                                    className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20" 
+                                    onClick={handlePullDatabase}
+                                    isLoading={isSyncing}
+                                  >
+                                      <DownloadCloud size={18} /> Baixar (Restaurar Nuvem -> Local)
+                                  </Button>
+                              </div>
                           </div>
                       </div>
                   </div>

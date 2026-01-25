@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit } from './types';
+import { fetchEntitiesFromSupabase } from './services/supabaseClient';
 
 export interface Notification {
   id: string;
@@ -62,6 +63,9 @@ interface AppState {
 
   // Audit Actions
   restoreState: (logId: string) => void;
+
+  // Sync Actions
+  loadFromSupabase: () => Promise<void>;
 }
 
 // Initial Admin User for Production
@@ -286,6 +290,39 @@ export const useStore = create<AppState>()(
       clients: [], // Empty for Production
       notifications: [],
 
+      // --- SUPABASE SYNC ACTION ---
+      loadFromSupabase: async () => {
+          const state = get();
+          const { supabaseUrl, supabaseAnonKey } = state.systemSettings;
+
+          if (!supabaseUrl || !supabaseAnonKey) return;
+
+          // Fetch all entities in parallel
+          const [usersRes, propsRes, clientsRes, pipeRes, logsRes] = await Promise.all([
+              fetchEntitiesFromSupabase('users', supabaseUrl, supabaseAnonKey),
+              fetchEntitiesFromSupabase('properties', supabaseUrl, supabaseAnonKey),
+              fetchEntitiesFromSupabase('clients', supabaseUrl, supabaseAnonKey),
+              fetchEntitiesFromSupabase('pipelines', supabaseUrl, supabaseAnonKey),
+              fetchEntitiesFromSupabase('logs', supabaseUrl, supabaseAnonKey)
+          ]);
+
+          const updates: Partial<AppState> = {};
+          let hasUpdates = false;
+
+          // Only update if we got data back (avoid wiping local state if offline/error)
+          if (usersRes.data && usersRes.data.length > 0) { updates.users = usersRes.data; hasUpdates = true; }
+          if (propsRes.data && propsRes.data.length > 0) { updates.properties = propsRes.data; hasUpdates = true; }
+          if (clientsRes.data && clientsRes.data.length > 0) { updates.clients = clientsRes.data; hasUpdates = true; }
+          if (pipeRes.data && pipeRes.data.length > 0) { updates.pipelines = pipeRes.data; hasUpdates = true; }
+          if (logsRes.data && logsRes.data.length > 0) { updates.logs = logsRes.data; hasUpdates = true; }
+
+          if (hasUpdates) {
+              set(updates);
+              // Silent update or console log
+              console.log("Estado sincronizado com Supabase:", updates);
+          }
+      },
+
       setCurrentUser: (userId) => {
           const user = get().users.find(u => u.id === userId);
           if (user) {
@@ -308,6 +345,8 @@ export const useStore = create<AppState>()(
               }
               set({ currentUser: user });
               get().addNotification('success', `Bem-vindo de volta, ${user.name.split(' ')[0]}!`);
+              // Trigger sync on login
+              get().loadFromSupabase();
               return true;
           }
           return false;
@@ -714,8 +753,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'goldimob-storage',
-      version: 2, // Changed version to clear old cache and ensure new admin loads
-      // We persist almost everything to keep the state consistent across reloads during dev
+      version: 2, 
       partialize: (state) => ({ 
           users: state.users,
           systemSettings: state.systemSettings,
@@ -723,8 +761,6 @@ export const useStore = create<AppState>()(
           clients: state.clients,
           pipelines: state.pipelines,
           logs: state.logs,
-          // We intentionally do NOT persist currentUser if we want to force login on refresh, 
-          // BUT for dev convenience/PWA feel, we usually persist it. 
           currentUser: state.currentUser 
       }),
     }

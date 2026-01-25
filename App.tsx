@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useStore } from './store';
 import { Layout } from './components/ui/Layout';
@@ -38,7 +38,12 @@ const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
 };
 
 function App() {
-  const { currentUser } = useStore();
+  const { currentUser, loadFromSupabase } = useStore();
+
+  // Load cloud data on mount
+  useEffect(() => {
+      loadFromSupabase();
+  }, []);
 
   // Helper to determine the "Home" page based on role
   const getHomePage = () => {
