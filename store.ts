@@ -270,10 +270,10 @@ export const useStore = create<AppState>()(
           crmGlobalInsightsPrompt: DEFAULT_CRM_GLOBAL_PROMPT,
           crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
           // Default API Key
-          geminiApiKey: process.env.GEMINI_API_KEY || '',
+          geminiApiKey: process.env.VITE_GEMINI_API_KEY || '',
           // Default Supabase config with provided credentials (or empty for production safety)
-          supabaseUrl: process.env.SUPABASE_URL || '',
-          supabaseAnonKey: process.env.SUPABASE_ANON_KEY || '',
+          supabaseUrl: process.env.VITE_SUPABASE_URL || '',
+          supabaseAnonKey: process.env.VITE_SUPABASE_ANON_KEY || '',
           // Default Lead Aging Config
           leadAging: {
               freshLimit: 2, // 0 to 2 days = Fresh
