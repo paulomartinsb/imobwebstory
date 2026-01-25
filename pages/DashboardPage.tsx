@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Card } from '../components/ui/Elements';
+import React, { useState, useMemo } from 'react';
+import { Card, Button, Input } from '../components/ui/Elements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Building, Users, Banknote, FileSignature, TrendingUp, Calendar, Clock, MapPin, User, ChevronRight, ChevronLeft, Filter } from 'lucide-react';
+import { Building, Users, Banknote, FileSignature, TrendingUp, Calendar, Clock, MapPin, User, ChevronRight, ChevronLeft, Filter, AlertTriangle, CheckCircle, Search, Activity } from 'lucide-react';
 import { useStore } from '../store';
 
 const MetricCard = ({ title, value, icon: Icon, trend, subtext }: any) => (
@@ -24,13 +24,23 @@ const MetricCard = ({ title, value, icon: Icon, trend, subtext }: any) => (
 );
 
 export const DashboardPage: React.FC = () => {
-  const { properties, clients, currentUser, users } = useStore();
+  const { properties, clients, currentUser, users, systemSettings } = useStore();
   const [selectedBrokerId, setSelectedBrokerId] = useState<string>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
+  // Performance Filters
+  const [perfStartDate, setPerfStartDate] = useState(() => {
+      const date = new Date();
+      date.setDate(1); // First day of current month
+      return date.toISOString().split('T')[0];
+  });
+  const [perfEndDate, setPerfEndDate] = useState(() => {
+      return new Date().toISOString().split('T')[0]; // Today
+  });
+
   const isAdmin = currentUser?.role === 'admin';
   
-  // --- Filtering Logic ---
+  // --- Filtering Logic for Main Dashboard ---
   const activeBrokerId = isAdmin ? selectedBrokerId : currentUser?.id;
 
   const filteredProperties = activeBrokerId === 'all' 
@@ -146,6 +156,99 @@ export const DashboardPage: React.FC = () => {
       { name: 'Imóveis Ativos', value: activeProperties },
   ];
 
+  // --- Team Performance Logic (Admin Only) ---
+  const teamPerformanceData = useMemo(() => {
+      if (!isAdmin) return [];
+
+      const start = new Date(perfStartDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(perfEndDate);
+      end.setHours(23, 59, 59, 999);
+
+      // Get Settings (or defaults if missing)
+      const config = systemSettings.teamPerformance || {
+          minProperties: 1,
+          minLeads: 5,
+          minVisits: 2,
+          activeLabel: 'Ativo',
+          warningLabel: 'Baixa Atividade',
+          inactiveLabel: 'Sem Produção - Cobrar'
+      };
+
+      return users
+          .filter(u => u.role === 'broker' || u.role === 'captator')
+          .map(user => {
+              // 1. Properties Created
+              const propsCount = properties.filter(p => {
+                  const pDate = new Date(p.createdAt || 0);
+                  return p.authorId === user.id && pDate >= start && pDate <= end;
+              }).length;
+
+              // 2. Leads Created (Only for Brokers mainly, but tracked for all)
+              const leadsCount = clients.filter(c => {
+                  const cDate = new Date(c.createdAt);
+                  return c.ownerId === user.id && cDate >= start && cDate <= end;
+              }).length;
+
+              // 3. Visits Performed (Based on leads owned by the user)
+              // NOTE: This assumes the broker who owns the lead does the visit.
+              const visitsCount = clients
+                  .filter(c => c.ownerId === user.id)
+                  .flatMap(c => c.visits)
+                  .filter(v => {
+                      const vDate = new Date(v.date);
+                      return v.status === 'completed' && vDate >= start && vDate <= end;
+                  }).length;
+
+              // 4. Status Determination using Config
+              let status: 'active' | 'inactive' | 'warning' = 'active';
+              let message = config.activeLabel;
+
+              if (user.role === 'broker') {
+                  // Broker Logic: Needs to meet minimums
+                  const metProps = propsCount >= config.minProperties;
+                  const metLeads = leadsCount >= config.minLeads;
+                  const metVisits = visitsCount >= config.minVisits;
+
+                  if (propsCount === 0 && leadsCount === 0 && visitsCount === 0) {
+                      status = 'inactive';
+                      message = config.inactiveLabel;
+                  } else if (!metProps && !metLeads && !metVisits) {
+                      // Has some activity but below ALL thresholds
+                      status = 'warning';
+                      message = config.warningLabel;
+                  } else {
+                      // Meets at least one requirement or is generally active
+                      status = 'active';
+                      message = config.activeLabel;
+                  }
+              } else if (user.role === 'captator') {
+                  // Captator Logic: Mainly Properties
+                  if (propsCount < config.minProperties) {
+                      if (propsCount === 0) {
+                          status = 'inactive';
+                          message = config.inactiveLabel;
+                      } else {
+                          status = 'warning';
+                          message = config.warningLabel;
+                      }
+                  }
+              }
+
+              return {
+                  id: user.id,
+                  name: user.name,
+                  role: user.role,
+                  avatar: user.avatar,
+                  propsCount,
+                  leadsCount,
+                  visitsCount,
+                  status,
+                  message
+              };
+          });
+  }, [users, properties, clients, perfStartDate, perfEndDate, isAdmin, systemSettings.teamPerformance]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -198,6 +301,118 @@ export const DashboardPage: React.FC = () => {
             subtext="Potenciais clientes no pipeline"
         />
       </div>
+
+      {/* ADMIN ONLY: Team Performance Monitor */}
+      {isAdmin && (
+          <Card className="overflow-hidden border-slate-200">
+              <div className="p-6 border-b border-slate-100 bg-slate-50 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                      <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                          <Activity size={20} className="text-primary-600" />
+                          Acompanhamento de Equipe
+                      </h3>
+                      <p className="text-sm text-slate-500">Monitoramento de produtividade de corretores e captadores.</p>
+                  </div>
+                  
+                  {/* Date Range Filter */}
+                  <div className="flex items-center gap-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                      <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-500 uppercase">De:</span>
+                          <input 
+                              type="date" 
+                              className="text-xs border-none bg-transparent p-0 focus:ring-0 text-slate-700"
+                              value={perfStartDate}
+                              onChange={e => setPerfStartDate(e.target.value)}
+                          />
+                      </div>
+                      <div className="w-px h-4 bg-slate-200"></div>
+                      <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-500 uppercase">Até:</span>
+                          <input 
+                              type="date" 
+                              className="text-xs border-none bg-transparent p-0 focus:ring-0 text-slate-700"
+                              value={perfEndDate}
+                              onChange={e => setPerfEndDate(e.target.value)}
+                          />
+                      </div>
+                  </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm text-slate-600">
+                      <thead className="bg-white border-b border-slate-100 text-slate-500 font-semibold uppercase text-xs">
+                          <tr>
+                              <th className="px-6 py-4">Membro</th>
+                              <th className="px-6 py-4 text-center">Imóveis Enviados</th>
+                              <th className="px-6 py-4 text-center">Leads Captados</th>
+                              <th className="px-6 py-4 text-center">Visitas Realizadas</th>
+                              <th className="px-6 py-4 text-right">Status</th>
+                          </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                          {teamPerformanceData.map((stat) => (
+                              <tr key={stat.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="px-6 py-4">
+                                      <div className="flex items-center gap-3">
+                                          <img src={stat.avatar} alt="" className="w-8 h-8 rounded-full bg-slate-200" />
+                                          <div>
+                                              <p className="font-bold text-slate-700">{stat.name}</p>
+                                              <p className="text-xs text-slate-400 capitalize">{stat.role === 'captator' ? 'Captador' : 'Corretor'}</p>
+                                          </div>
+                                      </div>
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                      {stat.propsCount === 0 ? (
+                                          <span className="text-slate-300">-</span>
+                                      ) : (
+                                          <span className="font-bold text-slate-700">{stat.propsCount}</span>
+                                      )}
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                      {stat.role === 'captator' ? (
+                                          <span className="text-slate-300 text-xs">N/A</span>
+                                      ) : stat.leadsCount === 0 ? (
+                                          <span className="text-slate-300">-</span>
+                                      ) : (
+                                          <span className="font-bold text-slate-700">{stat.leadsCount}</span>
+                                      )}
+                                  </td>
+                                  <td className="px-6 py-4 text-center">
+                                      {stat.role === 'captator' ? (
+                                          <span className="text-slate-300 text-xs">N/A</span>
+                                      ) : stat.visitsCount === 0 ? (
+                                          <span className="text-slate-300">-</span>
+                                      ) : (
+                                          <span className="font-bold text-slate-700">{stat.visitsCount}</span>
+                                      )}
+                                  </td>
+                                  <td className="px-6 py-4 text-right">
+                                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${
+                                          stat.status === 'inactive' 
+                                              ? 'bg-red-50 text-red-700 border-red-200' 
+                                              : stat.status === 'warning'
+                                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                                  : 'bg-green-50 text-green-700 border-green-200'
+                                      }`}>
+                                          {stat.status === 'inactive' && <AlertTriangle size={12} />}
+                                          {stat.status === 'active' && <CheckCircle size={12} />}
+                                          {stat.message}
+                                      </span>
+                                  </td>
+                              </tr>
+                          ))}
+                          {teamPerformanceData.length === 0 && (
+                              <tr>
+                                  <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                                      Nenhum corretor ou captador encontrado na equipe.
+                                  </td>
+                              </tr>
+                          )}
+                      </tbody>
+                  </table>
+              </div>
+          </Card>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Chart Area */}

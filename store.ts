@@ -315,6 +315,15 @@ export const useStore = create<AppState>()(
               freshColor: 'green',
               warmColor: 'yellow',
               coldColor: 'red'
+          },
+          // New Team Performance Defaults
+          teamPerformance: {
+              minProperties: 1, // Min properties to count as "Active"
+              minLeads: 5,      // Min leads to count as "Active"
+              minVisits: 2,     // Min visits to count as "Active"
+              activeLabel: 'Ativo',
+              warningLabel: 'Baixa Atividade',
+              inactiveLabel: 'Sem Produção - Cobrar'
           }
       },
       pipelines: [DEFAULT_PIPELINE],
@@ -324,7 +333,7 @@ export const useStore = create<AppState>()(
       clients: [], // Empty for Production
       notifications: [],
 
-      // ... (Sync actions logic kept as is) ...
+      // ... (Rest of actions logic kept as is) ...
       loadFromSupabase: async () => {
           const state = get();
           const envUrl = getEnv('VITE_SUPABASE_URL');
@@ -347,7 +356,9 @@ export const useStore = create<AppState>()(
                       ...cloudSettings,
                       supabaseUrl: cloudSettings.supabaseUrl || supabaseUrl,
                       supabaseAnonKey: cloudSettings.supabaseAnonKey || supabaseAnonKey,
-                      geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || ''
+                      geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || '',
+                      // Ensure new fields exist if coming from older DB version
+                      teamPerformance: cloudSettings.teamPerformance || state.systemSettings.teamPerformance
                   };
                   set({ systemSettings: mergedSettings });
                   console.log("Configurações Globais carregadas do Supabase.");
@@ -427,7 +438,8 @@ export const useStore = create<AppState>()(
                               ...current.systemSettings, 
                               ...data,
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
-                              supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey
+                              supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey,
+                              teamPerformance: data.teamPerformance || current.systemSettings.teamPerformance
                           };
                           // @ts-ignore
                           delete updates.systemSettings.id;

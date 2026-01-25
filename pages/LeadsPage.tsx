@@ -4,18 +4,19 @@ import { Card, Input, Badge, Button, PhoneInput } from '../components/ui/Element
 import { 
     Search, MessageCircle, Mail, Phone, Share2, 
     Trash2, X, Filter, User, Plus, Save, DollarSign, MapPin, Bed, Ruler,
-    Bath, Car, Loader2
+    Bath, Car, Loader2, Edit3
 } from 'lucide-react';
 import { Client, LeadSource, PropertyType } from '../types';
 import { searchCep } from '../services/viaCep';
 
 export const LeadsPage: React.FC = () => {
-    const { clients, currentUser, removeClient, addNotification, addClient, systemSettings, pipelines } = useStore();
+    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines } = useStore();
     const [searchText, setSearchText] = useState('');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null);
     const [isActionModalOpen, setIsActionModalOpen] = useState(false);
     const [filterSource, setFilterSource] = useState<string>('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     // New Lead Form State
     const [newLeadData, setNewLeadData] = useState({
@@ -98,6 +99,26 @@ export const LeadsPage: React.FC = () => {
         }
     };
 
+    const handleEditClick = (client: Client) => {
+        setNewLeadData({
+            name: client.name,
+            phone: client.phone,
+            email: client.email,
+            source: client.source as LeadSource,
+            notes: client.notes || '',
+            budget: client.budget ? String(client.budget) : '',
+            interest: client.interest || [],
+            location: '',
+            locations: client.desiredLocation || [],
+            minBedrooms: client.minBedrooms ? String(client.minBedrooms) : '',
+            minBathrooms: client.minBathrooms ? String(client.minBathrooms) : '',
+            minParking: client.minParking ? String(client.minParking) : '',
+            minArea: client.minArea ? String(client.minArea) : ''
+        });
+        setEditingId(client.id);
+        setIsAddModalOpen(true);
+    };
+
     const toggleInterest = (type: string) => {
         setNewLeadData(prev => {
             const current = prev.interest;
@@ -141,21 +162,14 @@ export const LeadsPage: React.FC = () => {
         }
     };
 
-    const handleAddLead = (e: React.FormEvent) => {
+    const handleSaveLead = (e: React.FormEvent) => {
         e.preventDefault();
         
-        // Find default pipeline (first one)
-        const defaultPipelineId = pipelines[0]?.id;
-        const defaultStageId = pipelines[0]?.stages[0]?.id || 'new';
-
-        const success = addClient({
+        const payload = {
             name: newLeadData.name,
             phone: newLeadData.phone,
             email: newLeadData.email,
             source: newLeadData.source,
-            pipelineId: defaultPipelineId,
-            stage: defaultStageId,
-            // Map Interest Fields
             budget: Number(newLeadData.budget) || 0,
             interest: newLeadData.interest,
             desiredLocation: newLeadData.locations,
@@ -163,25 +177,46 @@ export const LeadsPage: React.FC = () => {
             minBathrooms: Number(newLeadData.minBathrooms) || 0,
             minParking: Number(newLeadData.minParking) || 0,
             minArea: Number(newLeadData.minArea) || 0,
-            
-            notes: newLeadData.notes,
-            // Required empty fields
-            interestedPropertyIds: [],
-            familyMembers: [],
-            documents: [],
-            followers: []
-        });
+            notes: newLeadData.notes
+        };
 
-        if (success) {
-            addNotification('success', 'Lead cadastrado com sucesso!');
-            setIsAddModalOpen(false);
-            setNewLeadData({ 
-                name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
-                budget: '', interest: [], location: '', locations: [], minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
+        if (editingId) {
+            updateClient(editingId, payload);
+            addNotification('success', 'Lead atualizado com sucesso!');
+        } else {
+            // Find default pipeline (first one)
+            const defaultPipelineId = pipelines[0]?.id;
+            const defaultStageId = pipelines[0]?.stages[0]?.id || 'new';
+
+            addClient({
+                ...payload,
+                pipelineId: defaultPipelineId,
+                stage: defaultStageId,
+                interestedPropertyIds: [],
+                familyMembers: [],
+                documents: [],
+                followers: []
             });
-            setCepInput('');
+            addNotification('success', 'Lead cadastrado com sucesso!');
         }
+
+        setIsAddModalOpen(false);
+        setEditingId(null);
+        setNewLeadData({ 
+            name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
+            budget: '', interest: [], location: '', locations: [], minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
+        });
+        setCepInput('');
     };
+
+    const handleOpenAddModal = () => {
+        setEditingId(null);
+        setNewLeadData({ 
+            name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
+            budget: '', interest: [], location: '', locations: [], minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
+        });
+        setIsAddModalOpen(true);
+    }
 
     return (
         <div className="space-y-6">
@@ -190,7 +225,7 @@ export const LeadsPage: React.FC = () => {
                     <h1 className="text-2xl font-bold text-slate-800">Leads</h1>
                     <p className="text-slate-500">Gerencie todos os contatos cadastrados no sistema.</p>
                 </div>
-                <Button onClick={() => setIsAddModalOpen(true)}>
+                <Button onClick={handleOpenAddModal}>
                     <Plus size={18} /> Novo Lead
                 </Button>
             </div>
@@ -280,6 +315,13 @@ export const LeadsPage: React.FC = () => {
                                                 <MessageCircle size={18} />
                                             </button>
                                             <button 
+                                                onClick={() => handleEditClick(client)}
+                                                className="p-2 text-blue-500 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                                                title="Editar"
+                                            >
+                                                <Edit3 size={18} />
+                                            </button>
+                                            <button 
                                                 onClick={() => handleDelete(client.id)}
                                                 className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                                                 title="Excluir"
@@ -339,19 +381,20 @@ export const LeadsPage: React.FC = () => {
                 </div>
             )}
 
-            {/* Add Lead Modal */}
+            {/* Add/Edit Lead Modal */}
             {isAddModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl sticky top-0 z-10">
                             <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                                <Plus size={20} className="text-primary-600"/> Cadastrar Lead
+                                {editingId ? <Edit3 size={20} className="text-primary-600"/> : <Plus size={20} className="text-primary-600"/>} 
+                                {editingId ? 'Editar Lead' : 'Cadastrar Lead'}
                             </h2>
                             <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-slate-600">
                                 <X size={24} />
                             </button>
                         </div>
-                        <form onSubmit={handleAddLead} className="p-6 space-y-5">
+                        <form onSubmit={handleSaveLead} className="p-6 space-y-5">
                             {/* Basic Info */}
                             <div className="space-y-4">
                                 <Input 
@@ -379,7 +422,7 @@ export const LeadsPage: React.FC = () => {
                                     <select 
                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
                                         value={newLeadData.source}
-                                        onChange={e => setNewLeadData({...newLeadData, source: e.target.value})}
+                                        onChange={e => setNewLeadData({...newLeadData, source: e.target.value as LeadSource})}
                                     >
                                         {systemSettings.leadSources.map((s, i) => (
                                             <option key={i} value={s}>{s}</option>
@@ -495,7 +538,7 @@ export const LeadsPage: React.FC = () => {
 
                             <div className="pt-2 flex justify-end gap-2">
                                 <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancelar</Button>
-                                <Button type="submit">Cadastrar</Button>
+                                <Button type="submit">{editingId ? 'Salvar Alterações' : 'Cadastrar'}</Button>
                             </div>
                         </form>
                     </div>

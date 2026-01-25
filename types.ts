@@ -27,6 +27,18 @@ export interface LeadAgingConfig {
     coldColor: string; // ex: 'red', 'gray'
 }
 
+export interface TeamPerformanceConfig {
+    // Thresholds (Metas mínimas no período selecionado)
+    minProperties: number;
+    minLeads: number;
+    minVisits: number;
+
+    // Labels (Nomes dos Status)
+    activeLabel: string;   // Ex: "Produtivo"
+    warningLabel: string;  // Ex: "Atenção"
+    inactiveLabel: string; // Ex: "Cobrar / Parado"
+}
+
 export interface SystemSettings {
   allowNewRegistrations: boolean;
   requirePropertyApproval: boolean; // Se false, corretores publicam direto
@@ -51,6 +63,8 @@ export interface SystemSettings {
   crmCardInsightsPrompt: string; // Prompt para insights do lead individual
 
   leadAging: LeadAgingConfig; // Configuração de cores por tempo
+  
+  teamPerformance: TeamPerformanceConfig; // Nova configuração de monitoramento
 }
 
 export interface Property {

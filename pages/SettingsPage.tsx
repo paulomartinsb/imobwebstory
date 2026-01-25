@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Card, Button, Input } from '../components/ui/Elements';
-import { User, Bell, Shield, Smartphone, Users, Lock, Key } from 'lucide-react';
+import { User, Bell, Shield, Smartphone, Users, Lock, Key, Camera } from 'lucide-react';
 import { useStore } from '../store';
 
 export const SettingsPage: React.FC = () => {
   const { addNotification, currentUser, updateUser } = useStore();
   const [activeTab, setActiveTab] = useState<'profile' | 'notifications' | 'security'>('profile');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Security Form State
   const [currentPassword, setCurrentPassword] = useState('');
@@ -15,6 +16,27 @@ export const SettingsPage: React.FC = () => {
   const handleSave = () => {
       addNotification('success', 'Configurações salvas com sucesso!');
   }
+
+  const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (file && currentUser) {
+          // Limit file size to 2MB to prevent performance issues
+          if (file.size > 2 * 1024 * 1024) {
+              addNotification('error', 'A imagem é muito grande. Máximo de 2MB.');
+              return;
+          }
+
+          const reader = new FileReader();
+          reader.onloadend = () => {
+              if (typeof reader.result === 'string') {
+                  updateUser(currentUser.id, { avatar: reader.result });
+                  // Store notification handles success message automatically via updateUser, 
+                  // but we can add a specific one if needed, though updateUser logic covers it.
+              }
+          };
+          reader.readAsDataURL(file);
+      }
+  };
 
   const handlePasswordChange = () => {
       if (!currentUser) return;
@@ -53,12 +75,39 @@ export const SettingsPage: React.FC = () => {
             {/* Sidebar Menu */}
             <Card className="p-6 col-span-1 h-fit">
                 <div className="flex flex-col items-center text-center">
-                    <div className="w-24 h-24 rounded-full bg-slate-200 mb-4 overflow-hidden border-4 border-white shadow">
-                        <img src={currentUser?.avatar} alt="Avatar" className="w-full h-full object-cover" />
+                    <div 
+                        className="relative w-24 h-24 rounded-full bg-slate-200 mb-4 overflow-hidden border-4 border-white shadow group cursor-pointer"
+                        onClick={() => fileInputRef.current?.click()}
+                        title="Clique para alterar foto"
+                    >
+                        <img 
+                            src={currentUser?.avatar} 
+                            alt="Avatar" 
+                            className="w-full h-full object-cover transition-opacity group-hover:opacity-75" 
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20">
+                            <Camera className="text-white drop-shadow-md" size={24} />
+                        </div>
                     </div>
+                    
+                    <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        accept="image/*" 
+                        onChange={handlePhotoUpload} 
+                    />
+
                     <h3 className="text-lg font-bold text-slate-800">{currentUser?.name}</h3>
                     <p className="text-sm text-slate-500 mb-4 capitalize">{currentUser?.role}</p>
-                    <Button variant="outline" className="w-full text-sm">Alterar Foto</Button>
+                    
+                    <Button 
+                        variant="outline" 
+                        className="w-full text-sm"
+                        onClick={() => fileInputRef.current?.click()}
+                    >
+                        Alterar Foto
+                    </Button>
                 </div>
                 <div className="mt-6 space-y-2">
                     <button 
@@ -90,9 +139,9 @@ export const SettingsPage: React.FC = () => {
                     <Card className="p-6 animate-in fade-in slide-in-from-right-4 duration-300">
                         <h3 className="text-lg font-semibold text-slate-800 mb-4 pb-2 border-b border-slate-100">Informações Pessoais</h3>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                            <Input label="Nome Completo" defaultValue={currentUser?.name} />
-                            <Input label="E-mail" defaultValue={currentUser?.email} />
-                            <Input label="Telefone" defaultValue="(11) 99999-9999" />
+                            <Input label="Nome Completo" defaultValue={currentUser?.name} onChange={(e) => { if(currentUser) updateUser(currentUser.id, { name: e.target.value }) }} />
+                            <Input label="E-mail" defaultValue={currentUser?.email} onChange={(e) => { if(currentUser) updateUser(currentUser.id, { email: e.target.value }) }} />
+                            <Input label="Telefone" defaultValue="(11) 99999-9999" disabled />
                             <Input label="Função" defaultValue={currentUser?.role} disabled className="bg-slate-50 capitalize" />
                         </div>
                         <div className="flex justify-end gap-3">

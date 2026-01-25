@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
 import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT, DEFAULT_PROPERTY_TYPES, DEFAULT_FEATURES, DEFAULT_LEAD_SOURCES, DEFAULT_LOCATIONS } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3 } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry, User } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
 
 const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }) => {
-    // Flatten helper or just display keys
     const allKeys = Array.from(new Set([...Object.keys(before || {}), ...Object.keys(after || {})]));
     
     return (
@@ -26,7 +25,6 @@ const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }
                         const valAfter = after?.[key];
                         const isDiff = JSON.stringify(valBefore) !== JSON.stringify(valAfter);
                         
-                        // Ignore internal keys like ID if equal, or deep objects for simplicity
                         if (!isDiff) return null;
 
                         return (
@@ -146,6 +144,16 @@ export const AdminPage: React.FC = () => {
       coldColor: 'red'
   });
 
+  // Team Performance Config State
+  const [teamPerfConfig, setTeamPerfConfig] = useState(systemSettings.teamPerformance || {
+      minProperties: 1,
+      minLeads: 5,
+      minVisits: 2,
+      activeLabel: 'Ativo',
+      warningLabel: 'Baixa Atividade',
+      inactiveLabel: 'Sem Produção - Cobrar'
+  });
+
   // Security Check
   if (currentUser?.role !== 'admin') {
       return <Navigate to="/" replace />;
@@ -169,6 +177,10 @@ export const AdminPage: React.FC = () => {
 
   const handleAgingSave = () => {
       updateSystemSettings({ leadAging: agingConfig });
+  };
+
+  const handleTeamPerfSave = () => {
+      updateSystemSettings({ teamPerformance: teamPerfConfig });
   };
 
   const handleAddUser = () => {
@@ -274,9 +286,7 @@ export const AdminPage: React.FC = () => {
       }
   }
 
-  // ... (Database and other handlers kept same) ...
   const handleSeedDatabase = async () => {
-      // ... same logic ...
       if (!window.confirm("ATENÇÃO: Isso enviará TODOS os dados locais para o banco. Continuar?")) return;
       const url = systemSettings.supabaseUrl;
       const key = systemSettings.supabaseAnonKey;
@@ -311,7 +321,6 @@ export const AdminPage: React.FC = () => {
   };
 
   const copySqlSchema = () => {
-      // ... same logic ...
       const sql = `-- Copied SQL`; 
       navigator.clipboard.writeText(sql);
       addNotification('success', 'SQL Copiado!');
@@ -377,7 +386,6 @@ export const AdminPage: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex gap-4 border-b border-slate-200 overflow-x-auto">
-          {/* ... existing tabs ... */}
           <button onClick={() => setActiveTab('users')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'users' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               <div className="flex items-center gap-2"><Users size={18} /> Usuários</div>
           </button>
@@ -399,82 +407,83 @@ export const AdminPage: React.FC = () => {
       </div>
 
       {activeTab === 'users' && (
-          <Card className="overflow-hidden">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                  <div>
-                      <h2 className="text-lg font-semibold text-slate-800">Controle de Acesso (RBAC)</h2>
-                      <p className="text-sm text-slate-500">Gerencie usuários e suas permissões.</p>
+          <div className="space-y-6">
+              <Card className="overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                      <div>
+                          <h2 className="text-lg font-semibold text-slate-800">Controle de Acesso (RBAC)</h2>
+                          <p className="text-sm text-slate-500">Gerencie usuários e suas permissões.</p>
+                      </div>
+                      <Button onClick={() => setIsAddUserOpen(true)}>
+                          <UserPlus size={18} className="mr-2" /> Novo Usuário
+                      </Button>
                   </div>
-                  <Button onClick={() => setIsAddUserOpen(true)}>
-                      <UserPlus size={18} className="mr-2" /> Novo Usuário
-                  </Button>
-              </div>
-              <div className="overflow-x-auto">
-                  <table className="w-full text-left text-sm text-slate-600">
-                      <thead className="bg-slate-50 text-slate-800 font-semibold uppercase text-xs">
-                          <tr>
-                              <th className="px-6 py-4">Usuário</th>
-                              <th className="px-6 py-4">Email</th>
-                              <th className="px-6 py-4">Nível de Permissão Atual</th>
-                              <th className="px-6 py-4 text-right">Ação</th>
-                          </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                          {users.map(user => (
-                              <tr key={user.id} className={`hover:bg-slate-50 transition-colors ${user.blocked ? 'bg-red-50/50' : ''}`}>
-                                  <td className="px-6 py-4 flex items-center gap-3">
-                                      <img src={user.avatar} className={`w-8 h-8 rounded-full ${user.blocked ? 'grayscale opacity-50' : ''}`} alt="" />
-                                      <div>
-                                          <span className={`font-medium block ${user.blocked ? 'text-red-700 line-through' : ''}`}>{user.name}</span>
-                                          {user.blocked && <span className="text-[10px] text-red-600 font-bold uppercase">Acesso Bloqueado</span>}
-                                      </div>
-                                      {currentUser.id === user.id && <Badge color="blue">Você</Badge>}
-                                  </td>
-                                  <td className="px-6 py-4">{user.email}</td>
-                                  <td className="px-6 py-4">
-                                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize
-                                        ${user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 
-                                          user.role === 'broker' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
-                                          'bg-slate-50 text-slate-700 border-slate-200'}
-                                      `}>
-                                          {user.role === 'captator' ? 'Captador' : user.role}
-                                      </span>
-                                  </td>
-                                  <td className="px-6 py-4 flex justify-end gap-2">
-                                      {/* New Edit Button */}
-                                      <button 
-                                        onClick={() => openEditUser(user)}
-                                        className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                                        title="Editar Informações"
-                                      >
-                                          <Edit3 size={18} />
-                                      </button>
-
-                                      {user.id !== currentUser.id && (
-                                          <>
-                                              <button 
-                                                onClick={() => handleToggleBlock(user.id)}
-                                                className={`p-2 rounded transition-colors ${user.blocked ? 'text-green-500 hover:bg-green-50' : 'text-orange-400 hover:bg-orange-50'}`}
-                                                title={user.blocked ? "Desbloquear Acesso" : "Bloquear Acesso"}
-                                              >
-                                                  {user.blocked ? <Unlock size={18} /> : <Lock size={18} />}
-                                              </button>
-                                              <button 
-                                                onClick={() => handleRemoveUser(user.id)}
-                                                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                                                title="Remover Usuário"
-                                              >
-                                                  <Trash2 size={18} />
-                                              </button>
-                                          </>
-                                      )}
-                                  </td>
+                  <div className="overflow-x-auto">
+                      <table className="w-full text-left text-sm text-slate-600">
+                          <thead className="bg-slate-50 text-slate-800 font-semibold uppercase text-xs">
+                              <tr>
+                                  <th className="px-6 py-4">Usuário</th>
+                                  <th className="px-6 py-4">Email</th>
+                                  <th className="px-6 py-4">Nível de Permissão Atual</th>
+                                  <th className="px-6 py-4 text-right">Ação</th>
                               </tr>
-                          ))}
-                      </tbody>
-                  </table>
-              </div>
-          </Card>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                              {users.map(user => (
+                                  <tr key={user.id} className={`hover:bg-slate-50 transition-colors ${user.blocked ? 'bg-red-50/50' : ''}`}>
+                                      <td className="px-6 py-4 flex items-center gap-3">
+                                          <img src={user.avatar} className={`w-8 h-8 rounded-full ${user.blocked ? 'grayscale opacity-50' : ''}`} alt="" />
+                                          <div>
+                                              <span className={`font-medium block ${user.blocked ? 'text-red-700 line-through' : ''}`}>{user.name}</span>
+                                              {user.blocked && <span className="text-[10px] text-red-600 font-bold uppercase">Acesso Bloqueado</span>}
+                                          </div>
+                                          {currentUser.id === user.id && <Badge color="blue">Você</Badge>}
+                                      </td>
+                                      <td className="px-6 py-4">{user.email}</td>
+                                      <td className="px-6 py-4">
+                                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize
+                                            ${user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 
+                                              user.role === 'broker' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
+                                              'bg-slate-50 text-slate-700 border-slate-200'}
+                                          `}>
+                                              {user.role === 'captator' ? 'Captador' : user.role}
+                                          </span>
+                                      </td>
+                                      <td className="px-6 py-4 flex justify-end gap-2">
+                                          <button 
+                                            onClick={() => openEditUser(user)}
+                                            className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
+                                            title="Editar Informações"
+                                          >
+                                              <Edit3 size={18} />
+                                          </button>
+
+                                          {user.id !== currentUser.id && (
+                                              <>
+                                                  <button 
+                                                    onClick={() => handleToggleBlock(user.id)}
+                                                    className={`p-2 rounded transition-colors ${user.blocked ? 'text-green-500 hover:bg-green-50' : 'text-orange-400 hover:bg-orange-50'}`}
+                                                    title={user.blocked ? "Desbloquear Acesso" : "Bloquear Acesso"}
+                                                  >
+                                                      {user.blocked ? <Unlock size={18} /> : <Lock size={18} />}
+                                                  </button>
+                                                  <button 
+                                                    onClick={() => handleRemoveUser(user.id)}
+                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                                    title="Remover Usuário"
+                                                  >
+                                                      <Trash2 size={18} />
+                                                  </button>
+                                              </>
+                                          )}
+                                      </td>
+                                  </tr>
+                              ))}
+                          </tbody>
+                      </table>
+                  </div>
+              </Card>
+          </div>
       )}
 
       {/* Add User Modal */}
@@ -579,13 +588,10 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Other Tabs content remains mostly unchanged, just ensuring the surrounding divs are closed */}
+      {/* System Tab Content */}
       {activeTab === 'system' && (
-          // ... (Existing System Tab Content) ...
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="col-span-2 space-y-6">
-                  
-                  {/* Supabase Integration Card */}
                   <Card className="p-6 border-l-4 border-l-emerald-500">
                       <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                           <Database size={20} className="text-emerald-600" /> Banco de Dados em Nuvem (Supabase)
@@ -621,7 +627,6 @@ export const AdminPage: React.FC = () => {
                       </div>
                   </Card>
 
-                  {/* Google Gemini Integration Card */}
                   <Card className="p-6 border-l-4 border-l-indigo-500">
                       <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                           <Sparkles size={20} className="text-indigo-600" /> Integração Inteligência Artificial
@@ -737,9 +742,9 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
+      {/* Database Tab Content */}
       {activeTab === 'database' && (
           <div className="space-y-6">
-              {/* Database Tab content (same as before) */}
               <Card className="p-6 border-l-4 border-l-emerald-600">
                   <div className="flex justify-between items-start mb-6">
                       <div>
@@ -839,9 +844,8 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Properties Tab content (same as before) */}
+      {/* Properties Tab Content */}
       {activeTab === 'properties' && (
-          // ... (Existing Properties Tab content) ...
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="flex flex-col h-[500px]">
                   <div className="p-4 border-b border-slate-100">
@@ -917,10 +921,96 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* CRM Tab (same as before) */}
+      {/* CRM Tab - Configuração de Performance */}
       {activeTab === 'crm' && (
-          // ... (Existing CRM Tab Content) ...
           <div className="space-y-6">
+              {/* Team Performance Settings */}
+              <Card className="p-6 border-l-4 border-l-orange-500">
+                  <div className="flex items-center justify-between mb-6">
+                      <div>
+                          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                              <Target className="text-orange-600" size={20} />
+                              Metas e Monitoramento de Equipe
+                          </h2>
+                          <p className="text-sm text-slate-500">Configure as metas para considerar um corretor ou captador "Ativo" no dashboard.</p>
+                      </div>
+                      <Button onClick={handleTeamPerfSave} className="gap-2">
+                          <Save size={18} /> Salvar Regras
+                      </Button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      {/* Thresholds */}
+                      <div className="space-y-4">
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2">Metas (Quantidade Mínima)</h4>
+                          <p className="text-xs text-slate-500 mb-2">Quantidades necessárias dentro do período selecionado no Dashboard para atingir o status positivo.</p>
+                          
+                          <div className="grid grid-cols-3 gap-4">
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 block mb-1">Mín. Imóveis</label>
+                                  <Input 
+                                    type="number" 
+                                    value={teamPerfConfig.minProperties}
+                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, minProperties: Number(e.target.value)})}
+                                  />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 block mb-1">Mín. Leads</label>
+                                  <Input 
+                                    type="number" 
+                                    value={teamPerfConfig.minLeads}
+                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, minLeads: Number(e.target.value)})}
+                                  />
+                              </div>
+                              <div>
+                                  <label className="text-xs font-medium text-slate-500 block mb-1">Mín. Visitas</label>
+                                  <Input 
+                                    type="number" 
+                                    value={teamPerfConfig.minVisits}
+                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, minVisits: Number(e.target.value)})}
+                                  />
+                              </div>
+                          </div>
+                      </div>
+
+                      {/* Labels */}
+                      <div className="space-y-4">
+                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2">Personalização de Status</h4>
+                          <p className="text-xs text-slate-500 mb-2">Defina os nomes que aparecerão na tabela de monitoramento.</p>
+                          
+                          <div className="space-y-3">
+                              <div className="flex items-center gap-3">
+                                  <div className="w-3 h-3 rounded-full bg-green-500 shrink-0"></div>
+                                  <Input 
+                                    placeholder="Nome Status Positivo" 
+                                    className="flex-1"
+                                    value={teamPerfConfig.activeLabel}
+                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, activeLabel: e.target.value})}
+                                  />
+                              </div>
+                              <div className="flex items-center gap-3">
+                                  <div className="w-3 h-3 rounded-full bg-amber-500 shrink-0"></div>
+                                  <Input 
+                                    placeholder="Nome Status Alerta" 
+                                    className="flex-1"
+                                    value={teamPerfConfig.warningLabel}
+                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, warningLabel: e.target.value})}
+                                  />
+                              </div>
+                              <div className="flex items-center gap-3">
+                                  <div className="w-3 h-3 rounded-full bg-red-500 shrink-0"></div>
+                                  <Input 
+                                    placeholder="Nome Status Negativo" 
+                                    className="flex-1"
+                                    value={teamPerfConfig.inactiveLabel}
+                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, inactiveLabel: e.target.value})}
+                                  />
+                              </div>
+                          </div>
+                      </div>
+                  </div>
+              </Card>
+
               {/* AI Prompts Section */}
               <Card className="p-6 border-l-4 border-l-purple-500">
                   {/* ... (Keep existing prompt editors) ... */}
