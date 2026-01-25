@@ -27,7 +27,8 @@ export const LeadsPage: React.FC = () => {
         // Interest Fields
         budget: '',
         interest: [] as string[],
-        location: '',
+        location: '', // Used for text input
+        locations: [] as string[], // Used for tags/list
         minBedrooms: '',
         minBathrooms: '',
         minParking: '',
@@ -105,6 +106,23 @@ export const LeadsPage: React.FC = () => {
         });
     }
 
+    const addLocation = () => {
+        if (newLeadData.location.trim()) {
+            setNewLeadData(prev => ({ 
+                ...prev, 
+                locations: [...prev.locations, prev.location.trim()],
+                location: '' 
+            }));
+        }
+    }
+
+    const removeLocation = (loc: string) => {
+        setNewLeadData(prev => ({
+            ...prev,
+            locations: prev.locations.filter(l => l !== loc)
+        }));
+    }
+
     const handleCepSearch = async () => {
         const cleanCep = cepInput.replace(/\D/g, '');
         if (cleanCep.length < 8) return;
@@ -115,8 +133,9 @@ export const LeadsPage: React.FC = () => {
         
         if (data && !data.erro) {
             const loc = `${data.localidade} - ${data.bairro}`;
-            setNewLeadData(prev => ({ ...prev, location: loc }));
-            addNotification('success', 'Localização encontrada!');
+            setNewLeadData(prev => ({ ...prev, locations: [...prev.locations, loc] }));
+            addNotification('success', 'Localização adicionada!');
+            setCepInput('');
         } else {
             addNotification('error', 'CEP não encontrado.');
         }
@@ -139,7 +158,7 @@ export const LeadsPage: React.FC = () => {
             // Map Interest Fields
             budget: Number(newLeadData.budget) || 0,
             interest: newLeadData.interest,
-            desiredLocation: newLeadData.location ? [newLeadData.location] : [],
+            desiredLocation: newLeadData.locations,
             minBedrooms: Number(newLeadData.minBedrooms) || 0,
             minBathrooms: Number(newLeadData.minBathrooms) || 0,
             minParking: Number(newLeadData.minParking) || 0,
@@ -158,7 +177,7 @@ export const LeadsPage: React.FC = () => {
             setIsAddModalOpen(false);
             setNewLeadData({ 
                 name: '', phone: '', email: '', source: 'Manual / Balcão', notes: '',
-                budget: '', interest: [], location: '', minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
+                budget: '', interest: [], location: '', locations: [], minBedrooms: '', minBathrooms: '', minParking: '', minArea: ''
             });
             setCepInput('');
         }
@@ -196,11 +215,9 @@ export const LeadsPage: React.FC = () => {
                                 onChange={(e) => setFilterSource(e.target.value)}
                             >
                                 <option value="">Todas as Origens</option>
-                                <option value="Site Oficial">Site Oficial</option>
-                                <option value="Instagram">Instagram</option>
-                                <option value="Indicação">Indicação</option>
-                                <option value="Portal Zap">Portal Zap</option>
-                                <option value="Manual / Balcão">Manual / Balcão</option>
+                                {systemSettings.leadSources.map((s, i) => (
+                                    <option key={i} value={s}>{s}</option>
+                                ))}
                             </select>
                          </div>
                     </div>
@@ -388,7 +405,7 @@ export const LeadsPage: React.FC = () => {
                                     />
                                 </div>
 
-                                {/* Location with CEP */}
+                                {/* Location with CEP & Datalist */}
                                 <div className="space-y-1">
                                     <label className="text-sm font-medium text-slate-700 flex items-center gap-1"><MapPin size={14} /> Localização Desejada</label>
                                     <div className="flex gap-2 mb-2">
@@ -402,13 +419,27 @@ export const LeadsPage: React.FC = () => {
                                             />
                                             {isCepLoading && <Loader2 className="absolute right-3 top-2.5 animate-spin text-primary-600" size={16} />}
                                         </div>
-                                        <div className="w-2/3">
-                                            <Input 
-                                                placeholder="Bairro e Cidade"
+                                        <div className="w-2/3 flex gap-1">
+                                            <input 
+                                                placeholder="Bairro ou Cidade..."
+                                                className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                                list="lead-locations-list"
                                                 value={newLeadData.location}
                                                 onChange={e => setNewLeadData({...newLeadData, location: e.target.value})}
+                                                onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); addLocation(); }}}
                                             />
+                                            <datalist id="lead-locations-list">
+                                                {systemSettings.availableLocations.map((loc, i) => <option key={i} value={loc} />)}
+                                            </datalist>
+                                            <Button type="button" onClick={addLocation} variant="secondary" className="px-3"><Plus size={16}/></Button>
                                         </div>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {newLeadData.locations.map((loc, i) => (
+                                            <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded text-xs flex items-center gap-1">
+                                                {loc} <button type="button" onClick={() => removeLocation(loc)}><X size={12}/></button>
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
 
@@ -430,38 +461,22 @@ export const LeadsPage: React.FC = () => {
                                 </div>
 
                                 {/* Detailed Specs Grid */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Bed size={12} /> Min Quartos</label>
-                                        <Input 
-                                            type="number"
-                                            value={newLeadData.minBedrooms}
-                                            onChange={e => setNewLeadData({...newLeadData, minBedrooms: e.target.value})}
-                                        />
+                                <div className="grid grid-cols-4 gap-3 bg-slate-50 p-3 rounded-lg border border-slate-100">
+                                    <div className="col-span-1 space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Bed size={10} /> Quartos</label>
+                                        <Input type="number" className="bg-white" value={newLeadData.minBedrooms} onChange={e => setNewLeadData({...newLeadData, minBedrooms: e.target.value})} />
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Bath size={12} /> Min Banheiros</label>
-                                        <Input 
-                                            type="number"
-                                            value={newLeadData.minBathrooms}
-                                            onChange={e => setNewLeadData({...newLeadData, minBathrooms: e.target.value})}
-                                        />
+                                    <div className="col-span-1 space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Bath size={10} /> Banh.</label>
+                                        <Input type="number" className="bg-white" value={newLeadData.minBathrooms} onChange={e => setNewLeadData({...newLeadData, minBathrooms: e.target.value})} />
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Car size={12} /> Min Garagem</label>
-                                        <Input 
-                                            type="number"
-                                            value={newLeadData.minParking}
-                                            onChange={e => setNewLeadData({...newLeadData, minParking: e.target.value})}
-                                        />
+                                    <div className="col-span-1 space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Car size={10} /> Vagas</label>
+                                        <Input type="number" className="bg-white" value={newLeadData.minParking} onChange={e => setNewLeadData({...newLeadData, minParking: e.target.value})} />
                                     </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1"><Ruler size={12} /> Min Área (m²)</label>
-                                        <Input 
-                                            type="number"
-                                            value={newLeadData.minArea}
-                                            onChange={e => setNewLeadData({...newLeadData, minArea: e.target.value})}
-                                        />
+                                    <div className="col-span-1 space-y-1">
+                                        <label className="text-xs font-medium text-slate-500 flex items-center gap-1 truncate"><Ruler size={10} /> Área</label>
+                                        <Input type="number" className="bg-white" value={newLeadData.minArea} onChange={e => setNewLeadData({...newLeadData, minArea: e.target.value})} />
                                     </div>
                                 </div>
                             </div>

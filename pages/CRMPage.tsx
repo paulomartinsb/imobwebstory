@@ -472,9 +472,6 @@ export const CRMPage: React.FC = () => {
   const [linkSearchCode, setLinkSearchCode] = useState('');
   const [linkMatchingProperties, setLinkMatchingProperties] = useState<Property[]>([]);
 
-  // Tab state for New Lead Modal
-  const [activeLeadTab, setActiveLeadTab] = useState<'info' | 'profile' | 'visit'>('info');
-
   const initialFormState = {
       name: '', email: '', phone: '', source: 'Manual / Balcão' as LeadSource, ownerId: '',
       interestProfile: {
@@ -664,7 +661,13 @@ export const CRMPage: React.FC = () => {
       budget: formData.interestProfile.maxPrice || 0,
       interest: formData.interestProfile.propertyTypes || [],
       desiredLocation: formData.interestProfile.neighborhoods || [],
-      notes: formData.interestProfile.notes
+      notes: formData.interestProfile.notes,
+      // Mapping detail fields to root client object for compatibility
+      minBedrooms: formData.interestProfile.minBedrooms,
+      minBathrooms: formData.interestProfile.minSuites, // Mapping suites to bathrooms for simple check
+      minParking: formData.interestProfile.minParking,
+      minArea: formData.interestProfile.minArea,
+      desiredFeatures: formData.interestProfile.mustHaveFeatures
     };
 
     if (editingClientId) {
@@ -713,7 +716,6 @@ export const CRMPage: React.FC = () => {
     setEditingClientId(null);
     setFormData(initialFormState);
     setScheduleVisitNow(false);
-    setActiveLeadTab('info');
     setAddLeadOpen(true);
   };
 
@@ -772,11 +774,10 @@ export const CRMPage: React.FC = () => {
                         onDropClient={handleDropClient}
                     />
                 ))}
-                 {/* Lost Zone Column Placeholder or actual component if needed */}
             </div>
         </div>
 
-        {/* --- FULL FEATURED LEAD MODAL --- */}
+        {/* --- FULL FEATURED SINGLE-PAGE LEAD MODAL --- */}
         {(addLeadOpen || editLeadOpen) && (
              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                  <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
@@ -791,139 +792,131 @@ export const CRMPage: React.FC = () => {
                          </button>
                      </div>
 
-                     {/* Tabs */}
-                     <div className="flex border-b border-slate-100 px-6">
-                         <button onClick={() => setActiveLeadTab('info')} className={`pb-3 pt-3 text-sm font-semibold border-b-2 transition-colors mr-6 ${activeLeadTab === 'info' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500'}`}>
-                             Dados Básicos
-                         </button>
-                         <button onClick={() => setActiveLeadTab('profile')} className={`pb-3 pt-3 text-sm font-semibold border-b-2 transition-colors mr-6 ${activeLeadTab === 'profile' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500'}`}>
-                             Perfil de Interesse
-                         </button>
-                         {!editingClientId && (
-                             <button onClick={() => setActiveLeadTab('visit')} className={`pb-3 pt-3 text-sm font-semibold border-b-2 transition-colors ${activeLeadTab === 'visit' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500'}`}>
-                                 Agendar Visita
-                             </button>
-                         )}
-                     </div>
-
-                     <form onSubmit={handleSubmit} className="flex-1 p-6 space-y-6 overflow-y-auto">
+                     <form onSubmit={handleSubmit} className="flex-1 p-6 space-y-8 overflow-y-auto">
                          
-                         {/* TAB 1: BASIC INFO */}
-                         {activeLeadTab === 'info' && (
-                             <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
-                                 <Input label="Nome Completo" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Ex: João da Silva" />
-                                 
-                                 <div className="grid grid-cols-2 gap-4">
-                                     <PhoneInput label="Telefone / WhatsApp" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-                                     <Input label="Email" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="joao@email.com" />
-                                 </div>
+                         {/* SECTION 1: BASIC INFO */}
+                         <div className="space-y-4">
+                             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Dados do Contato</h3>
+                             <Input label="Nome Completo" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Ex: João da Silva" />
+                             
+                             <div className="grid grid-cols-2 gap-4">
+                                 <PhoneInput label="Telefone / WhatsApp" required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                                 <Input label="Email" type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="joao@email.com" />
+                             </div>
 
+                             <div>
+                                 <label className="text-sm font-medium text-slate-700 block mb-1">Origem do Lead</label>
+                                 <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as LeadSource})}>
+                                     {systemSettings.leadSources.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                                 </select>
+                             </div>
+
+                             {/* Only show owner select for Staff */}
+                             {isStaff && (
                                  <div>
-                                     <label className="text-sm font-medium text-slate-700 block mb-1">Origem do Lead</label>
-                                     <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.source} onChange={e => setFormData({...formData, source: e.target.value as LeadSource})}>
-                                         {systemSettings.leadSources.map((s, i) => <option key={i} value={s}>{s}</option>)}
+                                     <label className="text-sm font-medium text-slate-700 block mb-1">Responsável (Corretor)</label>
+                                     <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.ownerId} onChange={e => setFormData({...formData, ownerId: e.target.value})}>
+                                         <option value="">-- Selecione --</option>
+                                         {users.filter(u => u.role === 'broker').map(u => (
+                                             <option key={u.id} value={u.id}>{u.name}</option>
+                                         ))}
                                      </select>
                                  </div>
+                             )}
+                         </div>
 
-                                 {/* Only show owner select for Staff */}
-                                 {isStaff && (
-                                     <div>
-                                         <label className="text-sm font-medium text-slate-700 block mb-1">Responsável (Corretor)</label>
-                                         <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.ownerId} onChange={e => setFormData({...formData, ownerId: e.target.value})}>
-                                             <option value="">-- Selecione --</option>
-                                             {users.filter(u => u.role === 'broker').map(u => (
-                                                 <option key={u.id} value={u.id}>{u.name}</option>
-                                             ))}
-                                         </select>
-                                     </div>
-                                 )}
-                             </div>
-                         )}
-
-                         {/* TAB 2: INTEREST PROFILE */}
-                         {activeLeadTab === 'profile' && (
-                             <div className="space-y-5 animate-in fade-in slide-in-from-right-4">
-                                 <div className="grid grid-cols-2 gap-4">
-                                     <Input label="Orçamento Máximo (R$)" type="number" value={formData.interestProfile.maxPrice} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, maxPrice: Number(e.target.value) } })} />
-                                     <div>
-                                         <label className="text-sm font-medium text-slate-700 block mb-1">Finalidade</label>
-                                         <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.interestProfile.usage} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, usage: e.target.value as any } })}>
-                                             <option value="moradia">Moradia</option>
-                                             <option value="investimento">Investimento</option>
-                                         </select>
-                                     </div>
-                                 </div>
-
+                         {/* SECTION 2: INTEREST PROFILE */}
+                         <div className="space-y-5">
+                             <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Perfil de Interesse</h3>
+                             
+                             <div className="grid grid-cols-2 gap-4">
+                                 <Input label="Orçamento Máximo (R$)" type="number" value={formData.interestProfile.maxPrice} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, maxPrice: Number(e.target.value) } })} />
                                  <div>
-                                     <label className="text-sm font-medium text-slate-700 block mb-2">Tipo de Imóvel</label>
-                                     <div className="flex flex-wrap gap-2">
-                                         {systemSettings.propertyTypes.map(t => (
-                                             <button type="button" key={t.value} onClick={() => toggleProfileList('propertyTypes', t.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.interestProfile.propertyTypes.includes(t.value) ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600 border-slate-200'}`}>
-                                                 {t.label}
-                                             </button>
-                                         ))}
-                                     </div>
-                                 </div>
-
-                                 <div>
-                                     <label className="text-sm font-medium text-slate-700 block mb-2">Localização (Bairros/Cidades)</label>
-                                     <div className="flex gap-2 mb-2">
-                                         <input type="text" className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg" placeholder="Ex: Jardins" value={newLocation} onChange={e => setNewLocation(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); addLocation(); }}} />
-                                         <Button type="button" onClick={addLocation} variant="secondary" className="px-3"><Plus size={16}/></Button>
-                                     </div>
-                                     <div className="flex flex-wrap gap-2">
-                                         {formData.interestProfile.neighborhoods.map((loc, i) => (
-                                             <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded text-xs flex items-center gap-1">
-                                                 {loc} <button type="button" onClick={() => toggleProfileList('neighborhoods', loc)}><X size={12}/></button>
-                                             </span>
-                                         ))}
-                                     </div>
-                                 </div>
-
-                                 <div className="grid grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                     <div className="col-span-1"><Input label="Min Quartos" type="number" className="bg-white" value={formData.interestProfile.minBedrooms} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minBedrooms: Number(e.target.value) } })} /></div>
-                                     <div className="col-span-1"><Input label="Min Suítes" type="number" className="bg-white" value={formData.interestProfile.minSuites} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minSuites: Number(e.target.value) } })} /></div>
-                                     <div className="col-span-1"><Input label="Min Vagas" type="number" className="bg-white" value={formData.interestProfile.minParking} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minParking: Number(e.target.value) } })} /></div>
-                                     <div className="col-span-1"><Input label="Min Área (m²)" type="number" className="bg-white" value={formData.interestProfile.minArea} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minArea: Number(e.target.value) } })} /></div>
-                                 </div>
-
-                                 <div>
-                                     <label className="text-sm font-medium text-slate-700 block mb-2">Diferenciais Buscados</label>
-                                     <div className="flex flex-wrap gap-2">
-                                         {systemSettings.propertyFeatures.map(f => (
-                                             <button type="button" key={f} onClick={() => toggleProfileList('mustHaveFeatures', f)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.interestProfile.mustHaveFeatures.includes(f) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
-                                                 {f}
-                                             </button>
-                                         ))}
-                                     </div>
-                                 </div>
-
-                                 <div>
-                                     <label className="text-sm font-medium text-slate-700 block mb-1">Observações Gerais</label>
-                                     <textarea className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20" placeholder="Ex: Cliente tem pressa, prefere andar alto..." value={formData.interestProfile.notes} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, notes: e.target.value } })} />
+                                     <label className="text-sm font-medium text-slate-700 block mb-1">Finalidade</label>
+                                     <select className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" value={formData.interestProfile.usage} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, usage: e.target.value as any } })}>
+                                         <option value="moradia">Moradia</option>
+                                         <option value="investimento">Investimento</option>
+                                     </select>
                                  </div>
                              </div>
-                         )}
 
-                         {/* TAB 3: SCHEDULE VISIT (Only for New Leads) */}
-                         {!editingClientId && activeLeadTab === 'visit' && (
-                             <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
-                                 <div className="p-4 bg-blue-50 border border-blue-100 rounded-lg flex items-start gap-3">
-                                     <CalendarPlus className="text-blue-600 shrink-0 mt-1" size={20} />
-                                     <div>
-                                         <h4 className="font-semibold text-blue-800 text-sm">Agendamento Rápido</h4>
-                                         <p className="text-xs text-blue-700 mt-1">
-                                             Selecione esta opção para criar o lead já com uma visita agendada na agenda.
-                                         </p>
+                             <div>
+                                 <label className="text-sm font-medium text-slate-700 block mb-2">Tipo de Imóvel</label>
+                                 <div className="flex flex-wrap gap-2">
+                                     {systemSettings.propertyTypes.map(t => (
+                                         <button type="button" key={t.value} onClick={() => toggleProfileList('propertyTypes', t.value)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.interestProfile.propertyTypes.includes(t.value) ? 'bg-primary-600 text-white border-primary-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                             {t.label}
+                                         </button>
+                                     ))}
+                                 </div>
+                             </div>
+
+                             <div>
+                                 <label className="text-sm font-medium text-slate-700 block mb-2">Localização (Bairros/Cidades)</label>
+                                 <div className="flex gap-2 mb-2">
+                                     <input 
+                                        type="text" 
+                                        list="locations-datalist"
+                                        className="flex-1 px-3 py-1.5 text-sm border border-slate-200 rounded-lg" 
+                                        placeholder="Digite ou selecione..." 
+                                        value={newLocation} 
+                                        onChange={e => setNewLocation(e.target.value)} 
+                                        onKeyDown={e => { if(e.key === 'Enter') { e.preventDefault(); addLocation(); }}} 
+                                     />
+                                     <datalist id="locations-datalist">
+                                         {systemSettings.availableLocations.map((loc, i) => <option key={i} value={loc} />)}
+                                     </datalist>
+                                     <Button type="button" onClick={addLocation} variant="secondary" className="px-3"><Plus size={16}/></Button>
+                                 </div>
+                                 <div className="flex flex-wrap gap-2">
+                                     {formData.interestProfile.neighborhoods.map((loc, i) => (
+                                         <span key={i} className="bg-indigo-50 text-indigo-700 border border-indigo-100 px-2 py-1 rounded text-xs flex items-center gap-1">
+                                             {loc} <button type="button" onClick={() => toggleProfileList('neighborhoods', loc)}><X size={12}/></button>
+                                         </span>
+                                     ))}
+                                 </div>
+                             </div>
+
+                             <div className="grid grid-cols-4 gap-3 bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                 <div className="col-span-1"><Input label="Min Quartos" type="number" className="bg-white" value={formData.interestProfile.minBedrooms} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minBedrooms: Number(e.target.value) } })} /></div>
+                                 <div className="col-span-1"><Input label="Min Banheiros" type="number" className="bg-white" value={formData.interestProfile.minSuites} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minSuites: Number(e.target.value) } })} /></div>
+                                 <div className="col-span-1"><Input label="Min Vagas" type="number" className="bg-white" value={formData.interestProfile.minParking} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minParking: Number(e.target.value) } })} /></div>
+                                 <div className="col-span-1"><Input label="Min Área (m²)" type="number" className="bg-white" value={formData.interestProfile.minArea} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, minArea: Number(e.target.value) } })} /></div>
+                             </div>
+
+                             <div>
+                                 <label className="text-sm font-medium text-slate-700 block mb-2">Diferenciais Buscados</label>
+                                 <div className="flex flex-wrap gap-2">
+                                     {systemSettings.propertyFeatures.map(f => (
+                                         <button type="button" key={f} onClick={() => toggleProfileList('mustHaveFeatures', f)} className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${formData.interestProfile.mustHaveFeatures.includes(f) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                                             {f}
+                                         </button>
+                                     ))}
+                                 </div>
+                             </div>
+
+                             <div>
+                                 <label className="text-sm font-medium text-slate-700 block mb-1">Observações Gerais</label>
+                                 <textarea className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20" placeholder="Ex: Cliente tem pressa, prefere andar alto..." value={formData.interestProfile.notes} onChange={e => setFormData({ ...formData, interestProfile: { ...formData.interestProfile, notes: e.target.value } })} />
+                             </div>
+                         </div>
+
+                         {/* SECTION 3: VISIT SCHEDULE (Only for New) */}
+                         {!editingClientId && (
+                             <div className="space-y-6 pt-4 border-t border-slate-100">
+                                 <div className="flex items-center justify-between">
+                                     <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Agendamento de Visita</h3>
+                                     <div className="flex items-center gap-3">
+                                         <span className="text-xs text-slate-500">Agendar agora?</span>
+                                         <label className="relative inline-flex items-center cursor-pointer">
+                                             <input type="checkbox" className="sr-only peer" checked={scheduleVisitNow} onChange={(e) => setScheduleVisitNow(e.target.checked)} />
+                                             <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                                         </label>
                                      </div>
-                                     <label className="relative inline-flex items-center cursor-pointer ml-auto mt-1">
-                                         <input type="checkbox" className="sr-only peer" checked={scheduleVisitNow} onChange={(e) => setScheduleVisitNow(e.target.checked)} />
-                                         <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                     </label>
                                  </div>
 
                                  {scheduleVisitNow && (
-                                     <div className="space-y-4 pl-4 border-l-2 border-blue-100">
+                                     <div className="space-y-4 p-4 bg-blue-50 border border-blue-100 rounded-lg animate-in fade-in slide-in-from-top-2">
                                          <div className="grid grid-cols-2 gap-4">
                                              <div>
                                                  <label className="text-sm font-medium text-slate-700 block mb-1">Data e Hora</label>
@@ -981,29 +974,11 @@ export const CRMPage: React.FC = () => {
                          )}
                      </form>
 
-                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
-                         <div className="text-xs text-slate-500 italic">
-                             {activeLeadTab === 'info' ? 'Próximo: Perfil de Interesse' : activeLeadTab === 'profile' && !editingClientId ? 'Próximo: Agendar Visita' : ''}
-                         </div>
-                         <div className="flex gap-2">
-                             <Button type="button" variant="outline" onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }}>Cancelar</Button>
-                             {/* Navigation Buttons or Submit */}
-                             {activeLeadTab !== 'visit' && !editingClientId ? (
-                                 <Button type="button" onClick={() => setActiveLeadTab(activeLeadTab === 'info' ? 'profile' : 'visit')}>
-                                     Próximo <ArrowRight size={16} />
-                                 </Button>
-                             ) : (
-                                 <Button onClick={handleSubmit} className="gap-2">
-                                     <Save size={18} /> {editingClientId ? 'Salvar Alterações' : 'Cadastrar Lead'}
-                                 </Button>
-                             )}
-                             {/* Allow direct save from profile if editing */}
-                             {editingClientId && (
-                                 <Button onClick={handleSubmit} className="gap-2">
-                                     <Save size={18} /> Salvar Alterações
-                                 </Button>
-                             )}
-                         </div>
+                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+                         <Button type="button" variant="outline" onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }}>Cancelar</Button>
+                         <Button onClick={handleSubmit} className="gap-2">
+                             <Save size={18} /> {editingClientId ? 'Salvar Alterações' : 'Cadastrar Lead'}
+                         </Button>
                      </div>
                  </div>
              </div>
