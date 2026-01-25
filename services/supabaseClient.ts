@@ -23,8 +23,23 @@ export const syncEntityToSupabase = async (table: string, data: any, url: string
         .from(table)
         .upsert(payload, { onConflict: 'id' });
 
+    if (error) console.error(`Erro sync ${table}:`, error);
     return { error };
 };
+
+// Generic delete
+export const deleteEntityFromSupabase = async (table: string, id: string, url: string, key: string) => {
+    const supabase = getSupabase(url, key);
+    if (!supabase) return { error: 'Supabase não configurado' };
+
+    const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id);
+
+    if (error) console.error(`Erro delete ${table}:`, error);
+    return { error };
+}
 
 export const fetchEntitiesFromSupabase = async (table: string, url: string, key: string) => {
     const supabase = getSupabase(url, key);

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit } from './types';
-import { fetchEntitiesFromSupabase } from './services/supabaseClient';
+import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase } from './services/supabaseClient';
 
 export interface Notification {
   id: string;
@@ -259,6 +259,19 @@ const getEnv = (key: string) => {
     }
 }
 
+// REAL-TIME SYNC HELPER
+const syncToCloud = (settings: SystemSettings, table: string, data: any, isDelete = false) => {
+    const { supabaseUrl, supabaseAnonKey } = settings;
+    if (!supabaseUrl || !supabaseAnonKey) return; // Silent return if not configured
+
+    // Fire and forget (don't await) to update UI immediately
+    if (isDelete) {
+        deleteEntityFromSupabase(table, typeof data === 'string' ? data : data.id, supabaseUrl, supabaseAnonKey);
+    } else {
+        syncEntityToSupabase(table, data, supabaseUrl, supabaseAnonKey);
+    }
+}
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
@@ -327,7 +340,6 @@ export const useStore = create<AppState>()(
 
           if (hasUpdates) {
               set(updates);
-              // Silent update or console log
               console.log("Estado sincronizado com Supabase:", updates);
           }
       },
@@ -372,8 +384,14 @@ export const useStore = create<AppState>()(
               get().addNotification('error', 'Não é possível remover o último administrador.');
               return state;
           }
+          const updatedUsers = state.users.map(u => u.id === userId ? { ...u, role: newRole } : u);
+          
+          // Sync
+          const updatedUser = updatedUsers.find(u => u.id === userId);
+          if(updatedUser) syncToCloud(state.systemSettings, 'users', updatedUser);
+
           return {
-              users: state.users.map(u => u.id === userId ? { ...u, role: newRole } : u),
+              users: updatedUsers,
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Permissões do usuário atualizadas.' }]
           };
       }),
@@ -393,6 +411,10 @@ export const useStore = create<AppState>()(
                   avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=random`,
                   blocked: false // Default not blocked
               };
+              
+              // Sync
+              syncToCloud(state.systemSettings, 'users', newUser);
+
               return {
                   users: [...state.users, newUser],
                   notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Usuário adicionado com sucesso.' }]
@@ -405,6 +427,10 @@ export const useStore = create<AppState>()(
           if (userId === state.currentUser?.id) {
                return { notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'Você não pode excluir a si mesmo.' }] };
           }
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'users', userId, true);
+
           return {
               users: state.users.filter(u => u.id !== userId),
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Usuário removido.' }]
@@ -419,9 +445,13 @@ export const useStore = create<AppState>()(
           if (!user) return state;
 
           const newBlockedStatus = !user.blocked;
+          const updatedUser = { ...user, blocked: newBlockedStatus };
           
+          // Sync
+          syncToCloud(state.systemSettings, 'users', updatedUser);
+
           return {
-              users: state.users.map(u => u.id === userId ? { ...u, blocked: newBlockedStatus } : u),
+              users: state.users.map(u => u.id === userId ? updatedUser : u),
               notifications: [...state.notifications, { 
                   id: Math.random().toString(), 
                   type: newBlockedStatus ? 'error' : 'success', 
@@ -433,9 +463,14 @@ export const useStore = create<AppState>()(
       updateSystemSettings: (newSettings) => set((state) => {
           const oldSettings = { ...state.systemSettings };
           const updatedSettings = { ...state.systemSettings, ...newSettings };
+          const newLog = createLog(state.currentUser, 'update', 'settings', 'system', 'Configurações Globais', 'Alteração nas configurações do sistema', oldSettings, updatedSettings);
+          
+          // Sync Log
+          syncToCloud(updatedSettings, 'logs', newLog);
+
           return {
             systemSettings: updatedSettings,
-            logs: [createLog(state.currentUser, 'update', 'settings', 'system', 'Configurações Globais', 'Alteração nas configurações do sistema', oldSettings, updatedSettings), ...state.logs],
+            logs: [newLog, ...state.logs],
             notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Configurações do sistema salvas.' }]
           };
       }),
@@ -457,9 +492,15 @@ export const useStore = create<AppState>()(
             createdAt: new Date().toISOString()
         };
 
+        const newLog = createLog(user, 'create', 'property', newProperty.id, newProperty.title, 'Novo imóvel cadastrado', undefined, newProperty);
+        
+        // Sync
+        syncToCloud(state.systemSettings, 'properties', newProperty);
+        syncToCloud(state.systemSettings, 'logs', newLog);
+
         return { 
             properties: [...state.properties, newProperty],
-            logs: [createLog(user, 'create', 'property', newProperty.id, newProperty.title, 'Novo imóvel cadastrado', undefined, newProperty), ...state.logs],
+            logs: [newLog, ...state.logs],
             notifications: [...state.notifications, { 
                 id: Math.random().toString(), 
                 type: 'success', 
@@ -474,9 +515,15 @@ export const useStore = create<AppState>()(
           const newProperty = { ...oldProperty, ...updates };
           if (updates.status === 'pending_approval') newProperty.rejectionReason = undefined;
 
+          const newLog = createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, 'Imóvel atualizado', oldProperty, newProperty);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'properties', newProperty);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
               properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
-              logs: [createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, 'Imóvel atualizado', oldProperty, newProperty), ...state.logs],
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Imóvel atualizado com sucesso.' }]
           };
       }),
@@ -495,9 +542,15 @@ export const useStore = create<AppState>()(
           // Clear rejection reason if published, but keep it if moving to draft/pending with a note
           if (newStatus === 'published') newProperty.rejectionReason = undefined;
 
+          const newLog = createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, `Status alterado para ${newStatus}`, oldProperty, newProperty);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'properties', newProperty);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
               properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
-              logs: [createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, `Status alterado para ${newStatus}`, oldProperty, newProperty), ...state.logs],
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: `Status do imóvel alterado para ${newStatus}.` }]
           };
       }),
@@ -518,11 +571,15 @@ export const useStore = create<AppState>()(
               rejectionReason: undefined 
           };
 
-          const updatedProperties = state.properties.map(p => p.id === propertyId ? newProperty : p);
+          const newLog = createLog(user, 'approval', 'property', propertyId, oldProperty.title, 'Imóvel aprovado', oldProperty, newProperty);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'properties', newProperty);
+          syncToCloud(state.systemSettings, 'logs', newLog);
 
           return {
-              properties: updatedProperties,
-              logs: [createLog(user, 'approval', 'property', propertyId, oldProperty.title, 'Imóvel aprovado', oldProperty, newProperty), ...state.logs],
+              properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Imóvel aprovado e publicado.' }]
           };
       }),
@@ -533,9 +590,16 @@ export const useStore = create<AppState>()(
           const oldProperty = state.properties.find(p => p.id === propertyId);
           if (!oldProperty) return state;
           const newProperty = { ...oldProperty, status: 'draft' as const, approvedBy: undefined, rejectionReason: reason };
+          
+          const newLog = createLog(user, 'update', 'property', propertyId, oldProperty.title, 'Imóvel reprovado (Retornado para Rascunho)', oldProperty, newProperty);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'properties', newProperty);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
               properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
-              logs: [createLog(user, 'update', 'property', propertyId, oldProperty.title, 'Imóvel reprovado (Retornado para Rascunho)', oldProperty, newProperty), ...state.logs],
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: 'Imóvel devolvido ao corretor para correção.' }]
           };
       }),
@@ -544,9 +608,15 @@ export const useStore = create<AppState>()(
           const oldClient = state.clients.find(c => c.id === clientId);
           if (!oldClient) return state;
           const newClient = { ...oldClient, ...updates };
+          const newLog = createLog(state.currentUser, 'update', 'client', clientId, oldClient.name, 'Dados do lead atualizados', oldClient, newClient);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'clients', newClient);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
             clients: state.clients.map(c => c.id === clientId ? newClient : c),
-            logs: [createLog(state.currentUser, 'update', 'client', clientId, oldClient.name, 'Dados do lead atualizados', oldClient, newClient), ...state.logs],
+            logs: [newLog, ...state.logs],
             notifications: updates.stage ? [...state.notifications, { id: Math.random().toString(), type: 'info', message: 'Estágio do cliente atualizado.' }] : state.notifications
           };
       }),
@@ -554,9 +624,16 @@ export const useStore = create<AppState>()(
       removeClient: (clientId) => set((state) => {
           const client = state.clients.find(c => c.id === clientId);
           if (!client) return state;
+          
+          const newLog = createLog(state.currentUser, 'delete', 'client', clientId, client.name, 'Lead excluído', client, undefined);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'clients', clientId, true);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
             clients: state.clients.filter(c => c.id !== clientId),
-            logs: [createLog(state.currentUser, 'delete', 'client', clientId, client.name, 'Lead excluído', client, undefined), ...state.logs],
+            logs: [newLog, ...state.logs],
             notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: 'Cliente removido.' }]
           };
       }),
@@ -568,15 +645,21 @@ export const useStore = create<AppState>()(
           const updatedClient: Client = {
               ...client,
               pipelineId: undefined, // Remove from active CRM board
-              stage: 'new', // Reset stage or keep it, but logic implies available for new process. Setting to 'new' allows reuse.
+              stage: 'new', // Reset stage
               lostReason: reason,
               lastContact: new Date().toISOString(),
               interestedPropertyIds: [] // Unlink linked properties
           };
 
+          const newLog = createLog(state.currentUser, 'update', 'client', clientId, client.name, `Lead marcado como perdido: ${reason}`, client, updatedClient);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'clients', updatedClient);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
               clients: state.clients.map(c => c.id === clientId ? updatedClient : c),
-              logs: [createLog(state.currentUser, 'update', 'client', clientId, client.name, `Lead marcado como perdido: ${reason}`, client, updatedClient), ...state.logs],
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: 'Lead marcado como perdido e movido para o histórico.' }]
           };
       }),
@@ -602,9 +685,16 @@ export const useStore = create<AppState>()(
                 createdAt: new Date().toISOString(),
                 lastContact: new Date().toISOString()
             };
+            
+            const newLog = createLog(state.currentUser, 'create', 'client', newClient.id, newClient.name, 'Lead criado', undefined, newClient);
+            
+            // Sync
+            syncToCloud(state.systemSettings, 'clients', newClient);
+            syncToCloud(state.systemSettings, 'logs', newLog);
+
             return { 
                 clients: [...state.clients, newClient],
-                logs: [createLog(state.currentUser, 'create', 'client', newClient.id, newClient.name, 'Lead criado', undefined, newClient), ...state.logs],
+                logs: [newLog, ...state.logs],
                 notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Novo lead cadastrado!' }]
             };
           });
@@ -650,9 +740,16 @@ export const useStore = create<AppState>()(
               familyMembers: [...(originClient.familyMembers || []), { id: newId, name: newClient.name, relationship: memberData.relationship }]
           };
 
+          const newLog = createLog(state.currentUser, 'update', 'client', originClientId, originClient.name, `Adicionado familiar: ${newClient.name}`, originClient, updatedOriginClient);
+          
+          // Sync Both
+          syncToCloud(state.systemSettings, 'clients', updatedOriginClient);
+          syncToCloud(state.systemSettings, 'clients', newClient);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
               clients: [...state.clients.filter(c => c.id !== originClientId), updatedOriginClient, newClient],
-              logs: [createLog(state.currentUser, 'update', 'client', originClientId, originClient.name, `Adicionado familiar: ${newClient.name}`, originClient, updatedOriginClient), ...state.logs],
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Familiar adicionado e criado como Lead!' }]
           };
       }),
@@ -661,9 +758,16 @@ export const useStore = create<AppState>()(
           const oldClient = state.clients.find(c => c.id === clientId);
           if(!oldClient) return state;
           const newClient = { ...oldClient, pipelineId, stage: stageId };
+          
+          const newLog = createLog(state.currentUser, 'update', 'client', clientId, oldClient.name, 'Movido para pipeline', oldClient, newClient);
+          
+          // Sync
+          syncToCloud(state.systemSettings, 'clients', newClient);
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
           return {
               clients: state.clients.map(c => c.id === clientId ? newClient : c),
-              logs: [createLog(state.currentUser, 'update', 'client', clientId, oldClient.name, 'Movido para pipeline', oldClient, newClient), ...state.logs],
+              logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Lead movido para o pipeline.' }]
           };
       }),
@@ -677,6 +781,9 @@ export const useStore = create<AppState>()(
           const nextVisit = calculateNextVisit(updatedVisits);
 
           const updatedClient = { ...client, visits: updatedVisits, nextVisit, lastContact: new Date().toISOString() };
+          
+          // Sync Client (Visits are inside client object)
+          syncToCloud(state.systemSettings, 'clients', updatedClient);
 
           return {
               clients: state.clients.map(c => c.id === clientId ? updatedClient : c),
@@ -692,6 +799,9 @@ export const useStore = create<AppState>()(
           const nextVisit = calculateNextVisit(updatedVisits);
           const updatedClient = { ...client, visits: updatedVisits, nextVisit };
 
+          // Sync Client
+          syncToCloud(state.systemSettings, 'clients', updatedClient);
+
           return {
               clients: state.clients.map(c => c.id === clientId ? updatedClient : c),
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Visita atualizada.' }]
@@ -706,6 +816,9 @@ export const useStore = create<AppState>()(
           const nextVisit = calculateNextVisit(updatedVisits);
           const updatedClient = { ...client, visits: updatedVisits, nextVisit };
 
+          // Sync Client
+          syncToCloud(state.systemSettings, 'clients', updatedClient);
+
           return {
               clients: state.clients.map(c => c.id === clientId ? updatedClient : c),
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: 'Visita removida.' }]
@@ -713,12 +826,42 @@ export const useStore = create<AppState>()(
       }),
       
       // Pipeline Mgmt
-      addPipeline: (name) => set((state) => ({ pipelines: [...state.pipelines, { id: `p-${Date.now()}`, name, isDefault: false, stages: [{ id: `s-${Date.now()}-1`, name: 'Novo', color: 'border-slate-400', order: 0 }] }], notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Novo pipeline criado.' }] })),
-      updatePipeline: (pipelineId, updates) => set((state) => ({ pipelines: state.pipelines.map(p => p.id === pipelineId ? { ...p, ...updates } : p) })),
-      deletePipeline: (pipelineId) => set((state) => state.pipelines.find(p => p.id === pipelineId)?.isDefault ? { ...state, notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'O pipeline padrão não pode ser excluído.' }] } : { pipelines: state.pipelines.filter(p => p.id !== pipelineId), clients: state.clients.map(c => c.pipelineId === pipelineId ? { ...c, pipelineId: undefined, stage: '' } : c), notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Pipeline removido.' }] }),
-      addPipelineStage: (pipelineId, name) => set((state) => ({ pipelines: state.pipelines.map(p => p.id !== pipelineId ? p : { ...p, stages: [...p.stages, { id: `s-${Date.now()}`, name, color: 'border-gray-300', order: p.stages.length }] }) })),
-      updatePipelineStage: (pipelineId, stageId, updates) => set((state) => ({ pipelines: state.pipelines.map(p => p.id !== pipelineId ? p : { ...p, stages: p.stages.map(s => s.id === stageId ? { ...s, ...updates } : s) }) })),
-      deletePipelineStage: (pipelineId, stageId) => set((state) => ({ pipelines: state.pipelines.map(p => p.id !== pipelineId ? p : p.stages.length <= 1 ? p : { ...p, stages: p.stages.filter(s => s.id !== stageId) }) })),
+      addPipeline: (name) => set((state) => {
+          const newPipeline = { id: `p-${Date.now()}`, name, isDefault: false, stages: [{ id: `s-${Date.now()}-1`, name: 'Novo', color: 'border-slate-400', order: 0 }] };
+          syncToCloud(state.systemSettings, 'pipelines', newPipeline);
+          return { pipelines: [...state.pipelines, newPipeline], notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Novo pipeline criado.' }] };
+      }),
+      updatePipeline: (pipelineId, updates) => set((state) => {
+          const updatedPipelines = state.pipelines.map(p => p.id === pipelineId ? { ...p, ...updates } : p);
+          const updated = updatedPipelines.find(p => p.id === pipelineId);
+          if(updated) syncToCloud(state.systemSettings, 'pipelines', updated);
+          return { pipelines: updatedPipelines };
+      }),
+      deletePipeline: (pipelineId) => set((state) => {
+          if(state.pipelines.find(p => p.id === pipelineId)?.isDefault) {
+              return { notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'O pipeline padrão não pode ser excluído.' }] };
+          }
+          syncToCloud(state.systemSettings, 'pipelines', pipelineId, true);
+          return { pipelines: state.pipelines.filter(p => p.id !== pipelineId), clients: state.clients.map(c => c.pipelineId === pipelineId ? { ...c, pipelineId: undefined, stage: '' } : c), notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Pipeline removido.' }] };
+      }),
+      addPipelineStage: (pipelineId, name) => set((state) => {
+          const updatedPipelines = state.pipelines.map(p => p.id !== pipelineId ? p : { ...p, stages: [...p.stages, { id: `s-${Date.now()}`, name, color: 'border-gray-300', order: p.stages.length }] });
+          const updated = updatedPipelines.find(p => p.id === pipelineId);
+          if(updated) syncToCloud(state.systemSettings, 'pipelines', updated);
+          return { pipelines: updatedPipelines };
+      }),
+      updatePipelineStage: (pipelineId, stageId, updates) => set((state) => {
+          const updatedPipelines = state.pipelines.map(p => p.id !== pipelineId ? p : { ...p, stages: p.stages.map(s => s.id === stageId ? { ...s, ...updates } : s) });
+          const updated = updatedPipelines.find(p => p.id === pipelineId);
+          if(updated) syncToCloud(state.systemSettings, 'pipelines', updated);
+          return { pipelines: updatedPipelines };
+      }),
+      deletePipelineStage: (pipelineId, stageId) => set((state) => {
+          const updatedPipelines = state.pipelines.map(p => p.id !== pipelineId ? p : p.stages.length <= 1 ? p : { ...p, stages: p.stages.filter(s => s.id !== stageId) });
+          const updated = updatedPipelines.find(p => p.id === pipelineId);
+          if(updated) syncToCloud(state.systemSettings, 'pipelines', updated);
+          return { pipelines: updatedPipelines };
+      }),
       
       // System Actions
       addNotification: (type, message) => set((state) => ({ notifications: [...state.notifications, { id: Math.random().toString(), type, message }] })),
@@ -732,15 +875,20 @@ export const useStore = create<AppState>()(
           const user = state.currentUser;
 
           const newLog = createLog(user, 'restore', entity, entityId, log.entityName, `Restaurado para versão de ${new Date(log.timestamp).toLocaleString()}`, undefined, previousData);
+          
+          // Sync Log
+          syncToCloud(state.systemSettings, 'logs', newLog);
 
           switch(entity) {
               case 'property':
+                  syncToCloud(state.systemSettings, 'properties', previousData); // Revert cloud
                   return {
                       properties: state.properties.map(p => p.id === entityId ? { ...p, ...previousData } : p),
                       logs: [newLog, ...state.logs],
                       notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Imóvel restaurado.' }]
                   };
               case 'client':
+                  syncToCloud(state.systemSettings, 'clients', previousData); // Revert cloud
                   return {
                       clients: state.clients.map(c => c.id === entityId ? { ...c, ...previousData } : c),
                       logs: [newLog, ...state.logs],
