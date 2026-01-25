@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit } from './types';
-import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase } from './services/supabaseClient';
+import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable } from './services/supabaseClient';
 
 export interface Notification {
   id: string;
@@ -20,7 +20,7 @@ interface AppState {
   logs: LogEntry[];
   
   // Auth Actions
-  setCurrentUser: (userId: string) => void; // Debug/Admin use
+  setCurrentUser: (userId: string) => void;
   login: (email: string, password: string) => boolean;
   logout: () => void;
   updateUserRole: (userId: string, newRole: UserRole) => void;
@@ -66,6 +66,7 @@ interface AppState {
 
   // Sync Actions
   loadFromSupabase: () => Promise<void>;
+  subscribeToRealtime: () => void;
 }
 
 // Initial Admin User for Production
@@ -91,7 +92,7 @@ const DEFAULT_PIPELINE: Pipeline = {
     ]
 };
 
-const DEFAULT_PROPERTY_TYPES = [
+export const DEFAULT_PROPERTY_TYPES = [
     { value: 'apartamento', label: 'Apartamento' },
     { value: 'casa', label: 'Casa' },
     { value: 'cobertura', label: 'Cobertura' },
@@ -103,7 +104,7 @@ const DEFAULT_PROPERTY_TYPES = [
     { value: 'sitio', label: 'Sítio / Fazenda' }
 ];
 
-const DEFAULT_FEATURES = [
+export const DEFAULT_FEATURES = [
     "Piscina", "Churrasqueira", "Academia", "Salão de Festas",
     "Portaria 24h", "Varanda Gourmet", "Ar Condicionado",
     "Playground", "Elevador", "Mobiliado", "Vaga Coberta",
@@ -111,7 +112,7 @@ const DEFAULT_FEATURES = [
     "Sauna", "Quadra Poliesportiva", "Armários Embutidos"
 ];
 
-const DEFAULT_LEAD_SOURCES = [
+export const DEFAULT_LEAD_SOURCES = [
     "Manual / Balcão",
     "Site Oficial",
     "Instagram",
@@ -122,7 +123,7 @@ const DEFAULT_LEAD_SOURCES = [
     "Placa no Local"
 ];
 
-const DEFAULT_LOCATIONS = [
+export const DEFAULT_LOCATIONS = [
     "São Paulo - Jardins", 
     "São Paulo - Moema", 
     "São Paulo - Itaim Bibi",
@@ -133,7 +134,7 @@ const DEFAULT_LOCATIONS = [
     "Santana de Parnaíba - Gênesis"
 ];
 
-const DEFAULT_DESC_PROMPT = `Atue como um assistente imobiliário técnico e objetivo.
+export const DEFAULT_DESC_PROMPT = `Atue como um assistente imobiliário técnico e objetivo.
 Sua tarefa é ler os dados brutos deste imóvel e criar uma descrição organizada, limpa e fácil de visualizar para um anúncio.
 
 DADOS DO IMÓVEL:
@@ -155,7 +156,7 @@ REGRAS OBRIGATÓRIAS:
      - Uma frase final convidativa sobre os diferenciais.
 4. Mantenha o tom profissional e direto.`;
 
-const DEFAULT_MATCH_PROMPT = `Atue como um corretor imobiliário sênior. Analise a compatibilidade (Match) entre este cliente e este imóvel.
+export const DEFAULT_MATCH_PROMPT = `Atue como um corretor imobiliário sênior. Analise a compatibilidade (Match) entre este cliente e este imóvel.
 
 PERFIL DO CLIENTE:
 - Nome: {{clientName}}
@@ -183,7 +184,7 @@ Retorne APENAS um objeto JSON (sem markdown, sem explicações extras) com o seg
 
 Onde "score" é um número de 0 a 100 indicando a compatibilidade, e "reason" é uma explicação persuasiva de 1 a 2 frases.`;
 
-const DEFAULT_CRM_GLOBAL_PROMPT = `Atue como um gerente de vendas imobiliário experiente.
+export const DEFAULT_CRM_GLOBAL_PROMPT = `Atue como um gerente de vendas imobiliário experiente.
 Analise os seguintes dados anonimizados do pipeline de vendas:
 {{pipelineData}}
 
@@ -191,7 +192,7 @@ Forneça 3 insights estratégicos curtos e acionáveis para o corretor fechar ma
 Foque em: estagnação de leads, oportunidades de alto valor e priorização.
 Retorne em formato de lista (HTML <ul><li>) simples.`;
 
-const DEFAULT_CRM_CARD_PROMPT = `Atue como um Mentor de Vendas Imobiliárias de Alto Padrão (Coach de Corretores).
+export const DEFAULT_CRM_CARD_PROMPT = `Atue como um Mentor de Vendas Imobiliárias de Alto Padrão (Coach de Corretores).
 
 Analise este Lead específico e gere uma estratégia de abordagem agressiva e persuasiva.
 
@@ -259,10 +260,15 @@ const getEnv = (key: string) => {
     }
 }
 
-// REAL-TIME SYNC HELPER
+// REAL-TIME SYNC HELPER WITH ENV FALLBACK
 const syncToCloud = (settings: SystemSettings, table: string, data: any, isDelete = false) => {
-    const { supabaseUrl, supabaseAnonKey } = settings;
-    if (!supabaseUrl || !supabaseAnonKey) return; // Silent return if not configured
+    let { supabaseUrl, supabaseAnonKey } = settings;
+    
+    // FALLBACK: If settings are empty (cleared cache), try to read from env
+    if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
+    if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
+
+    if (!supabaseUrl || !supabaseAnonKey) return; 
 
     // Fire and forget (don't await) to update UI immediately
     if (isDelete) {
@@ -315,17 +321,22 @@ export const useStore = create<AppState>()(
       // --- SUPABASE SYNC ACTION ---
       loadFromSupabase: async () => {
           const state = get();
-          const { supabaseUrl, supabaseAnonKey } = state.systemSettings;
+          let { supabaseUrl, supabaseAnonKey } = state.systemSettings;
+
+          // FALLBACK: Strict check for Env Vars if store is empty
+          if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
+          if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
 
           if (!supabaseUrl || !supabaseAnonKey) return;
 
-          // Fetch all entities in parallel
-          const [usersRes, propsRes, clientsRes, pipeRes, logsRes] = await Promise.all([
+          // Fetch all entities in parallel, including system settings
+          const [usersRes, propsRes, clientsRes, pipeRes, logsRes, settingsRes] = await Promise.all([
               fetchEntitiesFromSupabase('users', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('properties', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('clients', supabaseUrl, supabaseAnonKey),
               fetchEntitiesFromSupabase('pipelines', supabaseUrl, supabaseAnonKey),
-              fetchEntitiesFromSupabase('logs', supabaseUrl, supabaseAnonKey)
+              fetchEntitiesFromSupabase('logs', supabaseUrl, supabaseAnonKey),
+              fetchEntitiesFromSupabase('system_settings', supabaseUrl, supabaseAnonKey)
           ]);
 
           const updates: Partial<AppState> = {};
@@ -337,13 +348,106 @@ export const useStore = create<AppState>()(
           if (clientsRes.data && clientsRes.data.length > 0) { updates.clients = clientsRes.data; hasUpdates = true; }
           if (pipeRes.data && pipeRes.data.length > 0) { updates.pipelines = pipeRes.data; hasUpdates = true; }
           if (logsRes.data && logsRes.data.length > 0) { updates.logs = logsRes.data; hasUpdates = true; }
+          
+          // Hydrate System Settings from Cloud
+          if (settingsRes.data && settingsRes.data.length > 0) {
+              const cloudSettings = settingsRes.data.find((s: any) => s.id === 'global-settings');
+              if (cloudSettings) {
+                  // Merge carefuly to not lose local auth/keys if cloud is empty on keys
+                  updates.systemSettings = {
+                      ...state.systemSettings,
+                      ...cloudSettings,
+                      // Preserve Keys if cloud is empty but local/env has them
+                      supabaseUrl: cloudSettings.supabaseUrl || state.systemSettings.supabaseUrl,
+                      supabaseAnonKey: cloudSettings.supabaseAnonKey || state.systemSettings.supabaseAnonKey,
+                      geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey
+                  };
+                  // Remove ID from settings object structure if it leaked in
+                  // @ts-ignore
+                  delete updates.systemSettings.id;
+                  hasUpdates = true;
+              }
+          }
 
           if (hasUpdates) {
               set(updates);
-              console.log("Estado sincronizado com Supabase:", updates);
+              console.log("Estado sincronizado com Supabase (Incluindo Configurações):", updates);
           }
       },
 
+      subscribeToRealtime: () => {
+          const state = get();
+          let { supabaseUrl, supabaseAnonKey } = state.systemSettings;
+          
+          // FALLBACK
+          if (!supabaseUrl) supabaseUrl = getEnv('VITE_SUPABASE_URL') || '';
+          if (!supabaseAnonKey) supabaseAnonKey = getEnv('VITE_SUPABASE_ANON_KEY') || '';
+
+          if (!supabaseUrl || !supabaseAnonKey) return;
+
+          // Generic Handler to update store from incoming data
+          const handleUpdate = (table: string, payload: any, type: 'INSERT' | 'UPDATE' | 'DELETE') => {
+              const data = payload.content; // Content is wrapped
+              if(!data || !data.id) return;
+
+              console.log(`Realtime ${type} on ${table}:`, data.id);
+
+              set((current) => {
+                  const updates: any = {};
+                  
+                  if (table === 'properties') {
+                      if (type === 'DELETE') updates.properties = current.properties.filter(p => p.id !== data.id);
+                      else {
+                          const exists = current.properties.find(p => p.id === data.id);
+                          if (exists) updates.properties = current.properties.map(p => p.id === data.id ? data : p);
+                          else updates.properties = [...current.properties, data];
+                      }
+                  } else if (table === 'clients') {
+                      if (type === 'DELETE') updates.clients = current.clients.filter(c => c.id !== data.id);
+                      else {
+                          const exists = current.clients.find(c => c.id === data.id);
+                          if (exists) updates.clients = current.clients.map(c => c.id === data.id ? data : c);
+                          else updates.clients = [...current.clients, data];
+                      }
+                  } else if (table === 'users') {
+                      if (type === 'DELETE') updates.users = current.users.filter(u => u.id !== data.id);
+                      else {
+                          const exists = current.users.find(u => u.id === data.id);
+                          if (exists) updates.users = current.users.map(u => u.id === data.id ? data : u);
+                          else updates.users = [...current.users, data];
+                      }
+                  } else if (table === 'pipelines') {
+                      if (type === 'DELETE') updates.pipelines = current.pipelines.filter(p => p.id !== data.id);
+                      else {
+                          const exists = current.pipelines.find(p => p.id === data.id);
+                          if (exists) updates.pipelines = current.pipelines.map(p => p.id === data.id ? data : p);
+                          else updates.pipelines = [...current.pipelines, data];
+                      }
+                  } else if (table === 'system_settings') {
+                      // Only care about the global settings row
+                      if (data.id === 'global-settings') {
+                          updates.systemSettings = { ...current.systemSettings, ...data };
+                          delete updates.systemSettings.id; // Cleanup
+                      }
+                  }
+
+                  return updates;
+              });
+          };
+
+          // Subscribe to tables
+          const tables = ['properties', 'clients', 'users', 'pipelines', 'system_settings'];
+          
+          tables.forEach(table => {
+              subscribeToTable(table, supabaseUrl, supabaseAnonKey, 
+                  (p) => handleUpdate(table, p, 'INSERT'),
+                  (p) => handleUpdate(table, p, 'UPDATE'),
+                  (p) => handleUpdate(table, p, 'DELETE')
+              );
+          });
+      },
+
+      // ... (Auth actions unchanged) ...
       setCurrentUser: (userId) => {
           const user = get().users.find(u => u.id === userId);
           if (user) {
@@ -358,7 +462,6 @@ export const useStore = create<AppState>()(
 
       login: (email, password) => {
           const user = get().users.find(u => u.email === email);
-          // Simple auth check - In production this should verify hash or call backend
           if (user && password === '123456') {
               if (user.blocked) {
                   get().addNotification('error', 'Acesso bloqueado. Entre em contato com o administrador.');
@@ -368,6 +471,7 @@ export const useStore = create<AppState>()(
               get().addNotification('success', `Bem-vindo de volta, ${user.name.split(' ')[0]}!`);
               // Trigger sync on login
               get().loadFromSupabase();
+              get().subscribeToRealtime(); // Start Listening
               return true;
           }
           return false;
@@ -386,7 +490,6 @@ export const useStore = create<AppState>()(
           }
           const updatedUsers = state.users.map(u => u.id === userId ? { ...u, role: newRole } : u);
           
-          // Sync
           const updatedUser = updatedUsers.find(u => u.id === userId);
           if(updatedUser) syncToCloud(state.systemSettings, 'users', updatedUser);
 
@@ -409,10 +512,9 @@ export const useStore = create<AppState>()(
                   email: userData.email,
                   role: userData.role,
                   avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.name)}&background=random`,
-                  blocked: false // Default not blocked
+                  blocked: false 
               };
               
-              // Sync
               syncToCloud(state.systemSettings, 'users', newUser);
 
               return {
@@ -428,7 +530,6 @@ export const useStore = create<AppState>()(
                return { notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'Você não pode excluir a si mesmo.' }] };
           }
           
-          // Sync
           syncToCloud(state.systemSettings, 'users', userId, true);
 
           return {
@@ -447,7 +548,6 @@ export const useStore = create<AppState>()(
           const newBlockedStatus = !user.blocked;
           const updatedUser = { ...user, blocked: newBlockedStatus };
           
-          // Sync
           syncToCloud(state.systemSettings, 'users', updatedUser);
 
           return {
@@ -465,16 +565,18 @@ export const useStore = create<AppState>()(
           const updatedSettings = { ...state.systemSettings, ...newSettings };
           const newLog = createLog(state.currentUser, 'update', 'settings', 'system', 'Configurações Globais', 'Alteração nas configurações do sistema', oldSettings, updatedSettings);
           
-          // Sync Log
+          // SYNC SETTINGS TO CLOUD (Correctly wrapping in content and adding fixed ID)
+          syncToCloud(updatedSettings, 'system_settings', { id: 'global-settings', ...updatedSettings });
           syncToCloud(updatedSettings, 'logs', newLog);
 
           return {
             systemSettings: updatedSettings,
             logs: [newLog, ...state.logs],
-            notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Configurações do sistema salvas.' }]
+            notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Configurações do sistema salvas e sincronizadas.' }]
           };
       }),
       
+      // ... (Other entity actions addProperty, addClient, etc. remain unchanged as they already call syncToCloud) ...
       addProperty: (propertyData) => set((state) => {
         const user = state.currentUser;
         if (!user) return state;
@@ -494,7 +596,6 @@ export const useStore = create<AppState>()(
 
         const newLog = createLog(user, 'create', 'property', newProperty.id, newProperty.title, 'Novo imóvel cadastrado', undefined, newProperty);
         
-        // Sync
         syncToCloud(state.systemSettings, 'properties', newProperty);
         syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -517,7 +618,6 @@ export const useStore = create<AppState>()(
 
           const newLog = createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, 'Imóvel atualizado', oldProperty, newProperty);
           
-          // Sync
           syncToCloud(state.systemSettings, 'properties', newProperty);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -535,16 +635,14 @@ export const useStore = create<AppState>()(
           const newProperty = { 
               ...oldProperty, 
               status: newStatus,
-              rejectionReason: reason // Add or Clear rejection reason
+              rejectionReason: reason 
           };
           
           if (newStatus === 'published' && !newProperty.approvedBy) newProperty.approvedBy = state.currentUser?.id;
-          // Clear rejection reason if published, but keep it if moving to draft/pending with a note
           if (newStatus === 'published') newProperty.rejectionReason = undefined;
 
           const newLog = createLog(state.currentUser, 'update', 'property', propertyId, oldProperty.title, `Status alterado para ${newStatus}`, oldProperty, newProperty);
           
-          // Sync
           syncToCloud(state.systemSettings, 'properties', newProperty);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -573,7 +671,6 @@ export const useStore = create<AppState>()(
 
           const newLog = createLog(user, 'approval', 'property', propertyId, oldProperty.title, 'Imóvel aprovado', oldProperty, newProperty);
           
-          // Sync
           syncToCloud(state.systemSettings, 'properties', newProperty);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -593,7 +690,6 @@ export const useStore = create<AppState>()(
           
           const newLog = createLog(user, 'update', 'property', propertyId, oldProperty.title, 'Imóvel reprovado (Retornado para Rascunho)', oldProperty, newProperty);
           
-          // Sync
           syncToCloud(state.systemSettings, 'properties', newProperty);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -610,7 +706,6 @@ export const useStore = create<AppState>()(
           const newClient = { ...oldClient, ...updates };
           const newLog = createLog(state.currentUser, 'update', 'client', clientId, oldClient.name, 'Dados do lead atualizados', oldClient, newClient);
           
-          // Sync
           syncToCloud(state.systemSettings, 'clients', newClient);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -627,7 +722,6 @@ export const useStore = create<AppState>()(
           
           const newLog = createLog(state.currentUser, 'delete', 'client', clientId, client.name, 'Lead excluído', client, undefined);
           
-          // Sync
           syncToCloud(state.systemSettings, 'clients', clientId, true);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -644,16 +738,15 @@ export const useStore = create<AppState>()(
 
           const updatedClient: Client = {
               ...client,
-              pipelineId: undefined, // Remove from active CRM board
-              stage: 'new', // Reset stage
+              pipelineId: undefined, 
+              stage: 'new',
               lostReason: reason,
               lastContact: new Date().toISOString(),
-              interestedPropertyIds: [] // Unlink linked properties
+              interestedPropertyIds: [] 
           };
 
           const newLog = createLog(state.currentUser, 'update', 'client', clientId, client.name, `Lead marcado como perdido: ${reason}`, client, updatedClient);
           
-          // Sync
           syncToCloud(state.systemSettings, 'clients', updatedClient);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -677,8 +770,8 @@ export const useStore = create<AppState>()(
                 ...clientData,
                 id: Math.random().toString(36).substr(2, 9),
                 ownerId: ownerId,
-                visits: [], // Default empty visits
-                interestedPropertyIds: [], // Default empty linked properties
+                visits: [],
+                interestedPropertyIds: [],
                 familyMembers: [],
                 documents: [],
                 followers: [],
@@ -688,7 +781,6 @@ export const useStore = create<AppState>()(
             
             const newLog = createLog(state.currentUser, 'create', 'client', newClient.id, newClient.name, 'Lead criado', undefined, newClient);
             
-            // Sync
             syncToCloud(state.systemSettings, 'clients', newClient);
             syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -707,7 +799,6 @@ export const useStore = create<AppState>()(
               return { notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'Lead principal não encontrado.' }]};
           }
 
-          // Check for duplicates
           if (state.clients.find(c => c.phone === memberData.phone || c.email === memberData.email)) {
               return { notifications: [...state.notifications, { id: Math.random().toString(), type: 'error', message: 'Familiar já existe como lead no sistema (verifique email/telefone).' }]};
           }
@@ -715,26 +806,25 @@ export const useStore = create<AppState>()(
           const newId = Math.random().toString(36).substr(2, 9);
           const newClient: Client = {
               id: newId,
-              ownerId: originClient.ownerId, // Same broker
-              pipelineId: undefined, // New lead starts in lead bank
+              ownerId: originClient.ownerId, 
+              pipelineId: undefined, 
               name: memberData.name,
               phone: memberData.phone,
               email: memberData.email,
               stage: 'new',
-              source: 'Indicação', // Assuming created from family
+              source: 'Indicação',
               budget: 0,
               interest: [],
               desiredLocation: [],
               visits: [],
               interestedPropertyIds: [],
-              familyMembers: [{ id: originClient.id, name: originClient.name, relationship: 'Responsável/Titular' }], // Link back to original
+              familyMembers: [{ id: originClient.id, name: originClient.name, relationship: 'Responsável/Titular' }], 
               documents: [],
               followers: [],
               createdAt: new Date().toISOString(),
               lastContact: new Date().toISOString()
           };
 
-          // Update original client to include new member
           const updatedOriginClient = {
               ...originClient,
               familyMembers: [...(originClient.familyMembers || []), { id: newId, name: newClient.name, relationship: memberData.relationship }]
@@ -742,7 +832,6 @@ export const useStore = create<AppState>()(
 
           const newLog = createLog(state.currentUser, 'update', 'client', originClientId, originClient.name, `Adicionado familiar: ${newClient.name}`, originClient, updatedOriginClient);
           
-          // Sync Both
           syncToCloud(state.systemSettings, 'clients', updatedOriginClient);
           syncToCloud(state.systemSettings, 'clients', newClient);
           syncToCloud(state.systemSettings, 'logs', newLog);
@@ -761,7 +850,6 @@ export const useStore = create<AppState>()(
           
           const newLog = createLog(state.currentUser, 'update', 'client', clientId, oldClient.name, 'Movido para pipeline', oldClient, newClient);
           
-          // Sync
           syncToCloud(state.systemSettings, 'clients', newClient);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
@@ -782,7 +870,6 @@ export const useStore = create<AppState>()(
 
           const updatedClient = { ...client, visits: updatedVisits, nextVisit, lastContact: new Date().toISOString() };
           
-          // Sync Client (Visits are inside client object)
           syncToCloud(state.systemSettings, 'clients', updatedClient);
 
           return {
@@ -799,7 +886,6 @@ export const useStore = create<AppState>()(
           const nextVisit = calculateNextVisit(updatedVisits);
           const updatedClient = { ...client, visits: updatedVisits, nextVisit };
 
-          // Sync Client
           syncToCloud(state.systemSettings, 'clients', updatedClient);
 
           return {
@@ -816,7 +902,6 @@ export const useStore = create<AppState>()(
           const nextVisit = calculateNextVisit(updatedVisits);
           const updatedClient = { ...client, visits: updatedVisits, nextVisit };
 
-          // Sync Client
           syncToCloud(state.systemSettings, 'clients', updatedClient);
 
           return {
@@ -825,7 +910,6 @@ export const useStore = create<AppState>()(
           };
       }),
       
-      // Pipeline Mgmt
       addPipeline: (name) => set((state) => {
           const newPipeline = { id: `p-${Date.now()}`, name, isDefault: false, stages: [{ id: `s-${Date.now()}-1`, name: 'Novo', color: 'border-slate-400', order: 0 }] };
           syncToCloud(state.systemSettings, 'pipelines', newPipeline);
@@ -863,7 +947,6 @@ export const useStore = create<AppState>()(
           return { pipelines: updatedPipelines };
       }),
       
-      // System Actions
       addNotification: (type, message) => set((state) => ({ notifications: [...state.notifications, { id: Math.random().toString(), type, message }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
 
@@ -876,19 +959,18 @@ export const useStore = create<AppState>()(
 
           const newLog = createLog(user, 'restore', entity, entityId, log.entityName, `Restaurado para versão de ${new Date(log.timestamp).toLocaleString()}`, undefined, previousData);
           
-          // Sync Log
           syncToCloud(state.systemSettings, 'logs', newLog);
 
           switch(entity) {
               case 'property':
-                  syncToCloud(state.systemSettings, 'properties', previousData); // Revert cloud
+                  syncToCloud(state.systemSettings, 'properties', previousData); 
                   return {
                       properties: state.properties.map(p => p.id === entityId ? { ...p, ...previousData } : p),
                       logs: [newLog, ...state.logs],
                       notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Imóvel restaurado.' }]
                   };
               case 'client':
-                  syncToCloud(state.systemSettings, 'clients', previousData); // Revert cloud
+                  syncToCloud(state.systemSettings, 'clients', previousData); 
                   return {
                       clients: state.clients.map(c => c.id === entityId ? { ...c, ...previousData } : c),
                       logs: [newLog, ...state.logs],
@@ -896,6 +978,7 @@ export const useStore = create<AppState>()(
                   };
               case 'settings':
                   if (entityId === 'system') {
+                      syncToCloud(previousData, 'system_settings', { id: 'global-settings', ...previousData });
                       return {
                           systemSettings: { ...state.systemSettings, ...previousData },
                           logs: [newLog, ...state.logs],
@@ -910,15 +993,12 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'goldimob-storage',
-      version: 2, 
+      version: 3, 
       partialize: (state) => ({ 
-          users: state.users,
-          systemSettings: state.systemSettings,
-          properties: state.properties,
-          clients: state.clients,
-          pipelines: state.pipelines,
-          logs: state.logs,
-          currentUser: state.currentUser 
+          // Only sync basic user info locally to keep session, everything else flows from Supabase
+          currentUser: state.currentUser,
+          // Keeping systemSettings here as fallback/cache, but Supabase is authoritative
+          systemSettings: state.systemSettings 
       }),
     }
   )

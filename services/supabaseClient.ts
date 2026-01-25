@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel } from '@supabase/supabase-js';
 
 // Helper to get client dynamically with passed credentials
 export const getSupabase = (url: string, key: string) => {
@@ -51,16 +51,34 @@ export const fetchEntitiesFromSupabase = async (table: string, url: string, key:
             .select('*');
 
         if (error) {
-            // If table doesn't exist yet, it's not a critical error for the app flow, just return empty
             console.warn(`Erro ao buscar tabela ${table}:`, error.message);
             return { data: [], error };
         }
 
-        // Unwrap content
         const entities = data.map((row: any) => row.content);
         return { data: entities, error: null };
     } catch (err) {
         console.error(err);
         return { data: [], error: err };
     }
+};
+
+// Realtime Subscription Helper
+export const subscribeToTable = (
+    table: string, 
+    url: string, 
+    key: string, 
+    onInsert: (payload: any) => void,
+    onUpdate: (payload: any) => void,
+    onDelete: (payload: any) => void
+): RealtimeChannel | null => {
+    const supabase = getSupabase(url, key);
+    if (!supabase) return null;
+
+    return supabase
+        .channel(`public:${table}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: table }, (payload) => onInsert(payload.new))
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: table }, (payload) => onUpdate(payload.new))
+        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: table }, (payload) => onDelete(payload.old))
+        .subscribe();
 };

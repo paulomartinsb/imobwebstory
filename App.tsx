@@ -13,23 +13,20 @@ import { PublicLeadFormPage } from './pages/PublicLeadFormPage';
 import { LoginPage } from './pages/LoginPage';
 import { ReferralPage } from './pages/ReferralPage';
 
-// Route Guard Component
-// Fix: Mark children as optional to resolve TypeScript error "Property 'children' is missing in type '{}'"
-const RequireAuth = ({ children }: { children?: React.ReactNode }) => {
+// Route Guard Component (v6 Style)
+const RequireAuth = ({ children }: { children: React.ReactNode }) => {
     const { currentUser } = useStore();
     const location = useLocation();
 
     if (!currentUser) {
-        // Redirect to login page but save the current location they were trying to go to
         return <Navigate to="/login" state={{ from: location }} replace />;
     }
 
     return <>{children}</>;
 };
 
-// Public Route Guard (redirects to home if already logged in)
-// Fix: Mark children as optional to resolve TypeScript error "Property 'children' is missing in type '{}'"
-const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
+// Public Route Guard (v6 Style)
+const PublicRoute = ({ children }: { children: React.ReactNode }) => {
     const { currentUser } = useStore();
     if (currentUser) {
         return <Navigate to="/" replace />;
@@ -38,12 +35,11 @@ const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
 };
 
 function App() {
-  const { currentUser, loadFromSupabase, systemSettings, updateSystemSettings } = useStore();
+  const { currentUser, loadFromSupabase, subscribeToRealtime, systemSettings, updateSystemSettings } = useStore();
 
   // Load cloud data on mount
   useEffect(() => {
-      // FIX for "Local DB" stuck issue:
-      // If store settings are empty but .env has values, force update from .env
+      // FIX for "Local DB" stuck issue and Credentials Loss:
       const getEnv = (key: string) => {
           try {
               // @ts-ignore
@@ -57,17 +53,22 @@ function App() {
       const envSupabaseKey = getEnv('VITE_SUPABASE_ANON_KEY');
       const envGeminiKey = getEnv('VITE_GEMINI_API_KEY');
 
+      // If env vars exist but store is empty (e.g. cleared cache), hydrate from env
       if ((!systemSettings.supabaseUrl && envSupabaseUrl) || (!systemSettings.geminiApiKey && envGeminiKey)) {
-          console.log("Detectadas variáveis de ambiente. Atualizando configurações...");
+          console.log("Detectadas variáveis de ambiente. Restaurando credenciais...");
           updateSystemSettings({
               supabaseUrl: envSupabaseUrl || systemSettings.supabaseUrl,
               supabaseAnonKey: envSupabaseKey || systemSettings.supabaseAnonKey,
               geminiApiKey: envGeminiKey || systemSettings.geminiApiKey
           });
           // Small delay to ensure state updates before loading from cloud
-          setTimeout(() => loadFromSupabase(), 500);
+          setTimeout(() => {
+              loadFromSupabase();
+              subscribeToRealtime();
+          }, 500);
       } else {
           loadFromSupabase();
+          subscribeToRealtime();
       }
   }, []);
 
@@ -80,34 +81,32 @@ function App() {
   return (
     <HashRouter>
       <Routes>
-        {/* Rota Pública (Landing Page) - Fora do Layout Principal */}
         <Route path="/lead-form/:brokerId" element={<PublicLeadFormPage />} />
         
-        {/* Login Page */}
         <Route path="/login" element={
             <PublicRoute>
                 <LoginPage />
             </PublicRoute>
         } />
 
-        {/* Rotas Protegidas do Sistema */}
-        <Route path="/" element={
+        {/* Protected Routes Wrapper */}
+        <Route path="/*" element={
             <RequireAuth>
-                <Layout />
+                <Layout>
+                    <Routes>
+                        <Route index element={getHomePage()} />
+                        <Route path="referrals" element={<ReferralPage />} />
+                        <Route path="properties" element={<PropertiesPage />} />
+                        <Route path="leads" element={<LeadsPage />} />
+                        <Route path="crm" element={<CRMPage />} />
+                        <Route path="contracts" element={<ContractsPage />} />
+                        <Route path="settings" element={<SettingsPage />} />
+                        <Route path="admin" element={<AdminPage />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                    </Routes>
+                </Layout>
             </RequireAuth>
-        }>
-          <Route index element={getHomePage()} />
-          <Route path="referrals" element={<ReferralPage />} />
-          
-          {/* Rotas bloqueadas para captadores via menu, mas segurança adicional pode ser feita aqui se necessário */}
-          <Route path="properties" element={<PropertiesPage />} />
-          <Route path="leads" element={<LeadsPage />} />
-          <Route path="crm" element={<CRMPage />} />
-          <Route path="contracts" element={<ContractsPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="admin" element={<AdminPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
+        } />
       </Routes>
     </HashRouter>
   );

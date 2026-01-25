@@ -1,27 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus, Send } from 'lucide-react';
 import { ToastContainer } from './Toast';
 import { useStore } from '../../store';
 
-const SidebarItem = ({ to, icon: Icon, label, onClick }: any) => (
-  <NavLink
-    to={to}
-    onClick={onClick}
-    className={({ isActive }) =>
-      `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+const SidebarItem = ({ to, icon: Icon, label, onClick }: any) => {
+  const location = useLocation();
+  // Simple active check for v5 compatibility logic
+  const isActive = to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+
+  return (
+    <Link
+      to={to}
+      onClick={onClick}
+      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
         isActive
           ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/30'
           : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-      }`
-    }
-  >
-    <Icon size={20} />
-    <span className="font-medium">{label}</span>
-  </NavLink>
-);
+      }`}
+    >
+      <Icon size={20} />
+      <span className="font-medium">{label}</span>
+    </Link>
+  );
+};
 
-export const Layout: React.FC = () => {
+export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { addNotification, currentUser, logout } = useStore();
   const location = useLocation();
@@ -165,7 +169,7 @@ export const Layout: React.FC = () => {
         </header>
         
         <div className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-8">
-          <Outlet />
+          {children}
         </div>
       </main>
     </div>

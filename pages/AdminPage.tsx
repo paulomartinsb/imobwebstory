@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useStore } from '../store';
+import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT, DEFAULT_PROPERTY_TYPES, DEFAULT_FEATURES, DEFAULT_LEAD_SOURCES, DEFAULT_LOCATIONS } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
 import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
@@ -246,7 +246,7 @@ export const AdminPage: React.FC = () => {
 
   // --- Database Seed ---
   const handleSeedDatabase = async () => {
-      if (!window.confirm("ATENÇÃO: Isso enviará TODOS os dados locais (Imóveis, Clientes, Usuários, Pipelines, Logs) para o banco de dados. Certifique-se que as tabelas foram criadas. Continuar?")) return;
+      if (!window.confirm("ATENÇÃO: Isso enviará TODOS os dados locais (Imóveis, Clientes, Usuários, Pipelines, Logs, Configurações) para o banco de dados. Certifique-se que as tabelas foram criadas. Continuar?")) return;
       
       const url = systemSettings.supabaseUrl;
       const key = systemSettings.supabaseAnonKey;
@@ -286,6 +286,10 @@ export const AdminPage: React.FC = () => {
       await syncList(clients, 'clients', 'Clientes e Visitas');
       // 5. Logs
       await syncList(logs, 'logs', 'Logs de Auditoria');
+      // 6. Global Settings (Single Row)
+      setSyncLog(prev => [...prev, `Sincronizando Configurações Globais...`]);
+      await syncEntityToSupabase('system_settings', { id: 'global-settings', ...systemSettings }, url, key);
+      successCount++;
 
       setSyncLog(prev => [...prev, `---------------------------------`]);
       setSyncLog(prev => [...prev, `Processo finalizado.`]);
@@ -313,6 +317,29 @@ export const AdminPage: React.FC = () => {
   };
 
   const copySqlSchema = () => {
+      // PREPARE DEFAULT SETTINGS JSON FOR SEEDING
+      const defaultSettingsJson = JSON.stringify({
+          companyName: 'GoldImob AI',
+          allowNewRegistrations: true,
+          requirePropertyApproval: true,
+          maintenanceMode: false,
+          propertyTypes: DEFAULT_PROPERTY_TYPES,
+          propertyFeatures: DEFAULT_FEATURES,
+          leadSources: DEFAULT_LEAD_SOURCES,
+          availableLocations: DEFAULT_LOCATIONS,
+          propertyDescriptionPrompt: DEFAULT_DESC_PROMPT,
+          matchAiPrompt: DEFAULT_MATCH_PROMPT,
+          crmGlobalInsightsPrompt: DEFAULT_CRM_GLOBAL_PROMPT,
+          crmCardInsightsPrompt: DEFAULT_CRM_CARD_PROMPT,
+          leadAging: {
+              freshLimit: 2,
+              warmLimit: 7,
+              freshColor: 'green',
+              warmColor: 'yellow',
+              coldColor: 'red'
+          }
+      });
+
       const sql = `
 -- TABELAS DO SISTEMA GOLDIMOB AI
 -- Execute este script no SQL Editor do Supabase para criar a estrutura completa.
@@ -320,40 +347,46 @@ export const AdminPage: React.FC = () => {
 -- 1. Imóveis
 create table if not exists properties (
   id text primary key,
-  content jsonb not null, -- Armazena todos os campos do imóvel
+  content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 2. Clientes / Leads (Inclui Visitas aninhadas no JSON)
+-- 2. Clientes / Leads
 create table if not exists clients (
   id text primary key,
-  content jsonb not null, -- Armazena perfil, interesses e visitas
+  content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 3. Usuários (Equipe)
+-- 3. Usuários
 create table if not exists users (
   id text primary key,
-  content jsonb not null, -- Armazena nome, email, role, avatar
+  content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 4. Pipelines (Configuração dos funis de venda)
+-- 4. Pipelines
 create table if not exists pipelines (
   id text primary key,
-  content jsonb not null, -- Armazena estágios e configurações
+  content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 5. Logs de Auditoria
+-- 5. Logs
 create table if not exists logs (
   id text primary key,
-  content jsonb not null, -- Histórico de ações
+  content jsonb not null, 
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- 6. INSERIR USUÁRIO ADMINISTRADOR PADRÃO
--- Email: admin@goldimob.ia | Senha: (Gerenciada pela aplicação: 123456)
+-- 6. Configurações Globais (Prompts, Listas, Regras)
+create table if not exists system_settings (
+  id text primary key,
+  content jsonb not null, 
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 7. INSERIR USUÁRIO ADMIN PADRÃO
 INSERT INTO users (id, content)
 VALUES (
   'admin-master',
@@ -367,24 +400,31 @@ VALUES (
   }'::jsonb
 ) ON CONFLICT (id) DO NOTHING;
 
+-- 8. INSERIR CONFIGURAÇÕES PADRÃO (PROMPTS, TIPOS, ETC.)
+INSERT INTO system_settings (id, content)
+VALUES (
+  'global-settings',
+  '${defaultSettingsJson}'::jsonb
+) ON CONFLICT (id) DO NOTHING;
+
 -- POLÍTICAS DE SEGURANÇA (RLS)
--- Ativar RLS
 alter table properties enable row level security;
 alter table clients enable row level security;
 alter table users enable row level security;
 alter table pipelines enable row level security;
 alter table logs enable row level security;
+alter table system_settings enable row level security;
 
--- Políticas de Desenvolvimento (Permitir acesso público temporário)
--- EM PRODUÇÃO: Substitua por políticas baseadas em auth.uid()
+-- Permissões Públicas (Dev Mode)
 create policy "Public Access Properties" on properties for all using (true) with check (true);
 create policy "Public Access Clients" on clients for all using (true) with check (true);
 create policy "Public Access Users" on users for all using (true) with check (true);
 create policy "Public Access Pipelines" on pipelines for all using (true) with check (true);
 create policy "Public Access Logs" on logs for all using (true) with check (true);
+create policy "Public Access Settings" on system_settings for all using (true) with check (true);
       `;
       navigator.clipboard.writeText(sql);
-      addNotification('success', 'SQL Completo (com usuário Admin) copiado!');
+      addNotification('success', 'SQL Completo (com Configurações e Prompts) copiado!');
   };
 
   const roleOptions: { value: UserRole; label: string }[] = [
@@ -786,6 +826,7 @@ create policy "Public Access Logs" on logs for all using (true) with check (true
                                       <li>Usuários e Equipe (Users)</li>
                                       <li>Funis de Venda e Etapas (Pipelines)</li>
                                       <li>Logs de Auditoria (Logs)</li>
+                                      <li>Configurações Globais (SystemSettings)</li>
                                   </ul>
                               </div>
                               <Button variant="outline" className="w-full gap-2 border-slate-300 hover:bg-white hover:border-primary-500 hover:text-primary-600 transition-all" onClick={copySqlSchema}>
@@ -852,6 +893,8 @@ create policy "Public Access Logs" on logs for all using (true) with check (true
           </div>
       )}
 
+      {/* Properties Tab, CRM Tab, Logs Tab code blocks remain unchanged */}
+      {/* ... keeping the rest of the existing code for these tabs ... */}
       {activeTab === 'properties' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Tipos de Imóveis */}
