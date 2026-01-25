@@ -147,8 +147,8 @@ export const calculateClientMatch = async (client: Client, property: Property, p
   }
 }
 
-// NEW FUNCTION: Finds the SINGLE BEST match from a list
-export const findBestMatch = async (client: Client, properties: Property[]): Promise<{ propertyId: string, reason: string } | null> => {
+// NEW FUNCTION: Finds TOP X matches from a list
+export const findTopMatches = async (client: Client, properties: Property[], limit: number): Promise<Array<{ propertyId: string, score: number, reason: string }>> => {
     try {
         const ai = getAI();
         
@@ -156,7 +156,7 @@ export const findBestMatch = async (client: Client, properties: Property[]): Pro
         const candidates = properties.map(p => ({
             id: p.id,
             title: p.title,
-            details: `${p.bedrooms} quartos, ${p.area}m², R$ ${p.price}`,
+            details: `${p.type}, ${p.bedrooms} quartos, ${p.area}m², R$ ${p.price}`,
             location: p.address,
             features: p.features.slice(0, 5)
         }));
@@ -171,25 +171,27 @@ export const findBestMatch = async (client: Client, properties: Property[]): Pro
         };
 
         const prompt = `
-        Atue como um Especialista em Real Estate.
+        Atue como um Corretor de Imóveis Especialista em Matchmaking.
         
         PERFIL DO CLIENTE:
         ${JSON.stringify(clientProfile)}
 
-        CANDIDATOS (IMÓVEIS):
+        CANDIDATOS DISPONÍVEIS (IMÓVEIS):
         ${JSON.stringify(candidates)}
 
         TAREFA:
-        Analise a lista de candidatos e escolha APENAS UM imóvel que seja o "Match Perfeito" ou a melhor aposta para este cliente.
-        Considere orçamento, localização e características.
+        1. Analise a lista de candidatos e identifique os melhores imóveis para este cliente.
+        2. Selecione até ${limit} melhores opções.
+        3. Atribua um "score" de 0 a 100 para cada um.
+        4. Escreva uma "reason" curta e vendedora para cada um.
 
-        Retorne um JSON estrito:
-        {
-            "propertyId": "ID_DO_IMOVEL_ESCOLHIDO",
-            "reason": "Explicação persuasiva de 2 frases do porquê este é o melhor."
-        }
+        Retorne APENAS um Array JSON puro:
+        [
+            { "propertyId": "ID", "score": 95, "reason": "Motivo..." },
+            ...
+        ]
         
-        Se nenhum imóvel for minimamente adequado, retorne propertyId como null.
+        Se nenhum for compatível, retorne array vazio [].
         `;
 
         const response = await ai.models.generateContent({
@@ -198,17 +200,17 @@ export const findBestMatch = async (client: Client, properties: Property[]): Pro
             config: { responseMimeType: 'application/json' }
         });
 
-        const jsonText = (response.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
-        const result = JSON.parse(jsonText);
+        const jsonText = (response.text || "[]").replace(/```json/g, '').replace(/```/g, '').trim();
+        const results = JSON.parse(jsonText);
 
-        if(result.propertyId) {
-            return result;
+        if(Array.isArray(results)) {
+            return results.sort((a, b) => b.score - a.score);
         }
-        return null;
+        return [];
 
     } catch (error) {
-        console.error("Gemini Best Match Error:", error);
-        return null;
+        console.error("Gemini Top Matches Error:", error);
+        return [];
     }
 }
 
