@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Property, User } from '../types';
-import { X, MapPin, Bed, Bath, Ruler, Check, ShieldCheck, AlertCircle, ThumbsDown, MessageSquareWarning, Edit3, ChevronLeft, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { X, MapPin, Bed, Bath, Ruler, Check, ShieldCheck, AlertCircle, ThumbsDown, MessageSquareWarning, Edit3, ChevronLeft, ChevronRight, Image as ImageIcon, Calendar, Send, CheckCircle, Clock, User as UserIcon } from 'lucide-react';
 import { Button, Badge } from './ui/Elements';
 
 interface PropertyDetailModalProps {
@@ -58,6 +58,14 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
     // Helper to get Property Label (assuming simple mapping or generic)
     const getPropertyLabel = (type: string) => type.replace('_', ' ').toUpperCase();
 
+    // Date formatter
+    const formatDate = (dateString?: string) => {
+        if (!dateString) return null;
+        return new Date(dateString).toLocaleString('pt-BR', {
+            day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit'
+        });
+    };
+
     return (
         <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -106,20 +114,67 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
                     </div>
                 </div>
 
-                {/* Thumbnails Strip */}
-                {images.length > 1 && (
-                    <div className="flex gap-2 p-2 overflow-x-auto bg-slate-50 border-b border-slate-100">
-                        {images.map((img, idx) => (
-                            <button 
-                                key={idx}
-                                onClick={() => setCurrentImageIndex(idx)}
-                                className={`relative w-16 h-12 rounded overflow-hidden flex-shrink-0 border-2 transition-all ${currentImageIndex === idx ? 'border-primary-500 ring-1 ring-primary-500' : 'border-transparent opacity-60 hover:opacity-100'}`}
-                            >
-                                <img src={img} className="w-full h-full object-cover" alt="" />
-                            </button>
-                        ))}
+                {/* Timeline / Dates Bar */}
+                <div className="bg-slate-50 border-b border-slate-100 p-4 overflow-x-auto">
+                    <div className="flex items-center gap-6 min-w-max text-xs text-slate-600">
+                        {property.createdAt && (
+                            <div className="flex items-center gap-2" title="Data de Cadastro">
+                                <div className="p-1.5 bg-white border border-slate-200 rounded text-slate-400">
+                                    <Calendar size={14} />
+                                </div>
+                                <div>
+                                    <span className="block font-bold text-slate-700">Criado</span>
+                                    {formatDate(property.createdAt)}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {property.submittedAt && (
+                            <>
+                                <div className="h-6 w-px bg-slate-200"></div>
+                                <div className="flex items-center gap-2" title="Enviado para Aprovação">
+                                    <div className="p-1.5 bg-yellow-50 border border-yellow-200 rounded text-yellow-600">
+                                        <Send size={14} />
+                                    </div>
+                                    <div>
+                                        <span className="block font-bold text-slate-700">Enviado</span>
+                                        {formatDate(property.submittedAt)}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {property.approvedAt && (
+                            <>
+                                <div className="h-6 w-px bg-slate-200"></div>
+                                <div className="flex items-center gap-2" title="Data de Publicação">
+                                    <div className="p-1.5 bg-green-50 border border-green-200 rounded text-green-600">
+                                        <CheckCircle size={14} />
+                                    </div>
+                                    <div>
+                                        <span className="block font-bold text-slate-700">Aprovado</span>
+                                        {formatDate(property.approvedAt)}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
+                        {property.updatedAt && (
+                            <>
+                                <div className="h-6 w-px bg-slate-200"></div>
+                                <div className="flex items-center gap-2" title="Última alteração de dados ou status">
+                                    <div className="p-1.5 bg-blue-50 border border-blue-200 rounded text-blue-600">
+                                        <Clock size={14} />
+                                    </div>
+                                    <div>
+                                        <span className="block font-bold text-slate-700">Última Edição</span>
+                                        {formatDate(property.updatedAt)}
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
-                )}
+                </div>
                 
                 <div className="p-6 md:p-8">
                      {/* Approval Alert inside Modal */}
@@ -199,6 +254,29 @@ export const PropertyDetailModal: React.FC<PropertyDetailModalProps> = ({
                             <div className="text-xl font-bold text-slate-800">{property.area}m²</div>
                         </div>
                     </div>
+
+                    {/* Owner Contact Info - Visible to Staff and Author */}
+                    {(isStaff || (isBroker && property.authorId === currentUser?.id)) && (property.ownerName || property.ownerPhone) && (
+                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-6">
+                            <h4 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
+                                <UserIcon size={16} /> Contato do Proprietário
+                            </h4>
+                            <div className="grid grid-cols-2 gap-4">
+                                {property.ownerName && (
+                                    <div>
+                                        <span className="text-xs text-blue-600 uppercase font-semibold">Nome</span>
+                                        <p className="text-sm text-blue-900 font-medium">{property.ownerName}</p>
+                                    </div>
+                                )}
+                                {property.ownerPhone && (
+                                    <div>
+                                        <span className="text-xs text-blue-600 uppercase font-semibold">Telefone</span>
+                                        <p className="text-sm text-blue-900 font-medium">{property.ownerPhone}</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="space-y-6">
                         <div>

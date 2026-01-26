@@ -19,6 +19,9 @@ export const LeadsPage: React.FC = () => {
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
 
+    // Permissions
+    const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
+
     // Initial State for Detailed Form
     const initialFormState = {
         name: '',
@@ -203,6 +206,7 @@ export const LeadsPage: React.FC = () => {
             phone: newLeadData.phone,
             email: newLeadData.email,
             source: newLeadData.source,
+            // If ownerId is set (by admin), use it. Else fall back to current user.
             ownerId: newLeadData.ownerId || currentUser?.id || '',
             
             // Detailed Profile
@@ -324,7 +328,7 @@ export const LeadsPage: React.FC = () => {
                                             </div>
 
                                             {/* OWNER VISUALIZATION FOR ADMINS/STAFF */}
-                                            {owner && (currentUser?.role === 'admin' || currentUser?.role === 'finance' || currentUser?.role === 'employee') && (
+                                            {owner && isStaff && (
                                                 <div className="flex items-center gap-1.5 mt-2 text-xs font-medium text-indigo-600 bg-indigo-50 w-fit px-2 py-0.5 rounded border border-indigo-100">
                                                     <Shield size={10} />
                                                     {owner.name}
@@ -645,6 +649,23 @@ export const LeadsPage: React.FC = () => {
                                         ))}
                                     </select>
                                 </div>
+
+                                {/* ADMIN/STAFF: Assign Owner */}
+                                {isStaff && (
+                                    <div>
+                                        <label className="text-sm font-medium text-slate-700 block mb-1">Responsável (Corretor)</label>
+                                        <select 
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                            value={newLeadData.ownerId}
+                                            onChange={e => setNewLeadData({...newLeadData, ownerId: e.target.value})}
+                                        >
+                                            <option value="">-- Selecione (ou eu mesmo) --</option>
+                                            {users.filter(u => u.role === 'broker' && !u.deletedAt).map(u => (
+                                                <option key={u.id} value={u.id}>{u.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
                             </div>
 
                             {/* SECTION 2: INTEREST PROFILE */}

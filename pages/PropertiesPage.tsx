@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
-import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History } from 'lucide-react';
+import { Card, Button, Input, Badge, PhoneInput } from '../components/ui/Elements';
+import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History, User } from 'lucide-react';
 import { generatePropertyDescription } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { Property, PropertyType, PropertyStatus } from '../types';
@@ -67,7 +67,9 @@ export const PropertiesPage: React.FC = () => {
     bedrooms: 0,
     bathrooms: 0,
     description: '',
-    images: [] // Changed to array
+    images: [], // Changed to array
+    ownerName: '',
+    ownerPhone: ''
   });
   
   const [isLoadingCep, setIsLoadingCep] = useState(false);
@@ -363,7 +365,9 @@ export const PropertiesPage: React.FC = () => {
           neighborhood: property.neighborhood || '',
           city: property.city || '',
           state: property.state || '',
-          images: property.images || []
+          images: property.images || [],
+          ownerName: property.ownerName || '',
+          ownerPhone: property.ownerPhone || ''
       });
       setIsModalOpen(true);
       setSelectedPropertyId(null);
@@ -436,12 +440,12 @@ export const PropertiesPage: React.FC = () => {
     
     setIsModalOpen(false);
     setEditingId(null);
-    setFormData({ type: 'apartamento', features: [], title: '', address: '', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', area: 0, price: 0, bedrooms: 0, bathrooms: 0, description: '', images: [] });
+    setFormData({ type: 'apartamento', features: [], title: '', address: '', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', area: 0, price: 0, bedrooms: 0, bathrooms: 0, description: '', images: [], ownerName: '', ownerPhone: '' });
   };
 
   const openNewPropertyModal = () => {
       setEditingId(null);
-      setFormData({ type: 'apartamento', features: [], title: '', address: '', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', area: 0, price: 0, bedrooms: 0, bathrooms: 0, description: '', images: [] });
+      setFormData({ type: 'apartamento', features: [], title: '', address: '', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', area: 0, price: 0, bedrooms: 0, bathrooms: 0, description: '', images: [], ownerName: '', ownerPhone: '' });
       setIsModalOpen(true);
   }
 
@@ -526,7 +530,7 @@ export const PropertiesPage: React.FC = () => {
             </button>
         </div>
 
-        {/* Advanced Filters Panel */}
+        {/* ... (Filters panel and tabs omitted for brevity, same as previous) ... */}
         {showAdvancedFilters && (
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 animate-in slide-in-from-top-2 duration-200">
                 <div className="col-span-1 md:col-span-2 lg:col-span-1">
@@ -765,7 +769,7 @@ export const PropertiesPage: React.FC = () => {
           />
       )}
 
-      {/* ... (Keep FeedbackModal and EditModal as they were, just ensuring they use new state variables) ... */}
+      {/* ... (FeedbackModal omitted for brevity, same as existing) ... */}
       {isFeedbackModalOpen && (
           <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
@@ -829,6 +833,26 @@ export const PropertiesPage: React.FC = () => {
                                 <Input label="Número" value={formData.number} onChange={e => setFormData({...formData, number: e.target.value})} className="col-span-1" />
                                 <Input label="Bairro" value={formData.neighborhood} onChange={e => setFormData({...formData, neighborhood: e.target.value})} required className="col-span-2" />
                                 <Input label="Cidade" value={formData.city} onChange={e => setFormData({...formData, city: e.target.value})} required className="col-span-1" />
+                            </div>
+                        </div>
+
+                        {/* Owner Details Section */}
+                        <div className="col-span-2 space-y-3 pt-2 border-t border-slate-100">
+                            <h3 className="font-semibold text-slate-700 text-sm flex items-center gap-2">
+                                <User size={16} /> Dados do Proprietário (Confidencial)
+                            </h3>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input 
+                                    label="Nome do Proprietário" 
+                                    value={formData.ownerName} 
+                                    onChange={e => setFormData({...formData, ownerName: e.target.value})} 
+                                    placeholder="Ex: Sr. João"
+                                />
+                                <PhoneInput 
+                                    label="Telefone / WhatsApp" 
+                                    value={formData.ownerPhone} 
+                                    onChange={e => setFormData({...formData, ownerPhone: e.target.value})} 
+                                />
                             </div>
                         </div>
 
@@ -921,6 +945,15 @@ export const PropertiesPage: React.FC = () => {
                                         por {users.find(u => u.id === editingProperty.authorId)?.name || 'Desconhecido'}
                                     </span>
                                 </div>
+
+                                {editingProperty.submittedAt && (
+                                    <div>
+                                        <span className="block text-slate-400">Enviado para Aprovação:</span>
+                                        <span className="font-medium text-yellow-700">
+                                            {new Date(editingProperty.submittedAt).toLocaleString()}
+                                        </span>
+                                    </div>
+                                )}
                                 
                                 {editingProperty.updatedAt && (
                                     <div>

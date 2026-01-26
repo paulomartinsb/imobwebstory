@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT, DEFAULT_PROPERTY_TYPES, DEFAULT_FEATURES, DEFAULT_LEAD_SOURCES, DEFAULT_LOCATIONS } from '../store';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry, User } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
@@ -592,6 +592,67 @@ export const AdminPage: React.FC = () => {
       {activeTab === 'system' && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="col-span-2 space-y-6">
+                  {/* SMTP Config */}
+                  <Card className="p-6 border-l-4 border-l-blue-600">
+                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                          <Mail size={20} className="text-blue-600" /> Configuração de E-mail (SMTP)
+                      </h3>
+                      <div className="space-y-4">
+                          <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100 mb-2">
+                              <div>
+                                  <p className="text-sm font-bold text-blue-900">Ativar envio de e-mails</p>
+                                  <p className="text-xs text-blue-700">Envia notificações de aprovação, rejeição e novos leads.</p>
+                              </div>
+                              <input 
+                                type="checkbox" 
+                                className="w-5 h-5" 
+                                checked={settingsForm.smtpConfig?.enabled || false}
+                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), enabled: e.target.checked} as any })}
+                              />
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-4">
+                              <Input 
+                                label="Host SMTP" 
+                                placeholder="smtp.gmail.com"
+                                value={settingsForm.smtpConfig?.host || ''}
+                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), host: e.target.value} as any })}
+                              />
+                              <Input 
+                                label="Porta" 
+                                type="number"
+                                placeholder="587"
+                                value={settingsForm.smtpConfig?.port || ''}
+                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), port: Number(e.target.value)} as any })}
+                              />
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                              <Input 
+                                label="Usuário (Email)" 
+                                placeholder="seu-email@gmail.com"
+                                value={settingsForm.smtpConfig?.user || ''}
+                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), user: e.target.value} as any })}
+                              />
+                              <Input 
+                                label="Senha / App Password" 
+                                type="password"
+                                placeholder="****"
+                                value={settingsForm.smtpConfig?.pass || ''}
+                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), pass: e.target.value} as any })}
+                              />
+                          </div>
+                          <Input 
+                                label="Nome do Remetente" 
+                                placeholder="Sistema Imobiliário"
+                                value={settingsForm.smtpConfig?.fromName || ''}
+                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), fromName: e.target.value} as any })}
+                          />
+                          <p className="text-xs text-slate-500 mt-1">
+                              <strong>Nota para Gmail:</strong> Você deve usar uma "Senha de App" (App Password) gerada nas configurações de segurança da sua conta Google, e não sua senha normal.
+                          </p>
+                      </div>
+                  </Card>
+
                   <Card className="p-6 border-l-4 border-l-emerald-500">
                       <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                           <Database size={20} className="text-emerald-600" /> Banco de Dados em Nuvem (Supabase)

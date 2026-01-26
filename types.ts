@@ -9,6 +9,7 @@ export interface User {
   id: string;
   name: string;
   email: string;
+  phone?: string; // New: Phone number
   password?: string; // New: Password field for management
   role: UserRole;
   avatar: string;
@@ -41,6 +42,16 @@ export interface TeamPerformanceConfig {
     inactiveLabel: string; // Ex: "Cobrar / Parado"
 }
 
+export interface SmtpConfig {
+    host: string;
+    port: number;
+    user: string;
+    pass: string; // App Password for Gmail
+    secure: boolean;
+    fromName: string;
+    enabled: boolean;
+}
+
 export interface SystemSettings {
   allowNewRegistrations: boolean;
   requirePropertyApproval: boolean; // Se false, corretores publicam direto
@@ -67,6 +78,8 @@ export interface SystemSettings {
   leadAging: LeadAgingConfig; // Configuração de cores por tempo
   
   teamPerformance: TeamPerformanceConfig; // Nova configuração de monitoramento
+  
+  smtpConfig?: SmtpConfig; // Configuração de envio de e-mails
 }
 
 export interface Property {

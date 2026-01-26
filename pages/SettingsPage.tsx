@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Card, Button, Input } from '../components/ui/Elements';
+import { Card, Button, Input, PhoneInput } from '../components/ui/Elements';
 import { User, Bell, Shield, Smartphone, Users, Lock, Key, Camera } from 'lucide-react';
 import { useStore } from '../store';
 
@@ -11,7 +11,8 @@ export const SettingsPage: React.FC = () => {
   // Local state for profile to prevent auto-save
   const [profileForm, setProfileForm] = useState({
       name: '',
-      email: ''
+      email: '',
+      phone: ''
   });
 
   // Initialize form when currentUser loads or changes (e.g. login)
@@ -20,7 +21,8 @@ export const SettingsPage: React.FC = () => {
       if (currentUser) {
           setProfileForm({
               name: currentUser.name || '',
-              email: currentUser.email || ''
+              email: currentUser.email || '',
+              phone: currentUser.phone || ''
           });
       }
   }, [currentUser?.id]); 
@@ -40,7 +42,8 @@ export const SettingsPage: React.FC = () => {
           // Call updateUser which handles Supabase sync via store logic
           updateUser(currentUser.id, {
               name: profileForm.name,
-              email: profileForm.email
+              email: profileForm.email,
+              phone: profileForm.phone
           });
           // Notification is handled by the store action
       }
@@ -180,11 +183,16 @@ export const SettingsPage: React.FC = () => {
                                 value={profileForm.email} 
                                 onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} 
                             />
-                            <Input label="Telefone" defaultValue="(11) 99999-9999" disabled />
+                            <PhoneInput
+                                label="Telefone"
+                                value={profileForm.phone}
+                                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+                                placeholder="(00) 00000-0000"
+                            />
                             <Input label="Função" defaultValue={currentUser?.role} disabled className="bg-slate-50 capitalize" />
                         </div>
                         <div className="flex justify-end gap-3">
-                            <Button variant="outline" onClick={() => setProfileForm({ name: currentUser?.name || '', email: currentUser?.email || '' })}>Cancelar</Button>
+                            <Button variant="outline" onClick={() => setProfileForm({ name: currentUser?.name || '', email: currentUser?.email || '', phone: currentUser?.phone || '' })}>Cancelar</Button>
                             <Button onClick={handleSaveProfile}>Salvar Alterações</Button>
                         </div>
                     </Card>

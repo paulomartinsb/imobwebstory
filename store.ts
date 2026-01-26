@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit } from './types';
 import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable } from './services/supabaseClient';
+import { sendSystemEmail, emailTemplates } from './services/emailService';
 
 export interface Notification {
   id: string;
@@ -324,6 +325,16 @@ export const useStore = create<AppState>()(
               activeLabel: 'Ativo',
               warningLabel: 'Baixa Atividade',
               inactiveLabel: 'Sem Produção - Cobrar'
+          },
+          // Default SMTP (Disabled)
+          smtpConfig: {
+              host: 'smtp.gmail.com',
+              port: 587,
+              user: '',
+              pass: '',
+              secure: false,
+              fromName: 'Sistema WebImob',
+              enabled: false
           }
       },
       pipelines: [DEFAULT_PIPELINE],
@@ -358,7 +369,8 @@ export const useStore = create<AppState>()(
                       supabaseAnonKey: cloudSettings.supabaseAnonKey || supabaseAnonKey,
                       geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || '',
                       // Ensure new fields exist if coming from older DB version
-                      teamPerformance: cloudSettings.teamPerformance || state.systemSettings.teamPerformance
+                      teamPerformance: cloudSettings.teamPerformance || state.systemSettings.teamPerformance,
+                      smtpConfig: cloudSettings.smtpConfig || state.systemSettings.smtpConfig
                   };
                   set({ systemSettings: mergedSettings });
                   console.log("Configurações Globais carregadas do Supabase.");
@@ -439,7 +451,8 @@ export const useStore = create<AppState>()(
                               ...data,
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
                               supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey,
-                              teamPerformance: data.teamPerformance || current.systemSettings.teamPerformance
+                              teamPerformance: data.teamPerformance || current.systemSettings.teamPerformance,
+                              smtpConfig: data.smtpConfig || current.systemSettings.smtpConfig
                           };
                           // @ts-ignore
                           delete updates.systemSettings.id;
@@ -728,10 +741,21 @@ export const useStore = create<AppState>()(
           syncToCloud(state.systemSettings, 'properties', newProperty);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
+          // SEND EMAIL TO OWNER
+          const owner = state.users.find(u => u.id === oldProperty.authorId);
+          if (owner) {
+              const body = emailTemplates.propertyApproved(owner.name, oldProperty.title, oldProperty.code);
+              sendSystemEmail({
+                  to: owner.email,
+                  subject: `Sucesso: Imóvel Publicado - ${state.systemSettings.companyName}`,
+                  body
+              }, state.systemSettings.smtpConfig);
+          }
+
           return {
               properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
               logs: [newLog, ...state.logs],
-              notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Imóvel aprovado e publicado.' }]
+              notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: `Sucesso: O imóvel '${oldProperty.title}' foi publicado!` }]
           };
       }),
 
@@ -754,10 +778,21 @@ export const useStore = create<AppState>()(
           syncToCloud(state.systemSettings, 'properties', newProperty);
           syncToCloud(state.systemSettings, 'logs', newLog);
 
+          // SEND EMAIL TO OWNER
+          const owner = state.users.find(u => u.id === oldProperty.authorId);
+          if (owner) {
+              const body = emailTemplates.propertyRejected(owner.name, oldProperty.title, oldProperty.code, reason);
+              sendSystemEmail({
+                  to: owner.email,
+                  subject: `Atenção: Ajustes Necessários - ${state.systemSettings.companyName}`,
+                  body
+              }, state.systemSettings.smtpConfig);
+          }
+
           return {
               properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
               logs: [newLog, ...state.logs],
-              notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: 'Imóvel devolvido ao corretor para correção.' }]
+              notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: `Atenção: O imóvel '${oldProperty.title}' precisa de ajustes. Motivo: ${reason}` }]
           };
       }),
       
@@ -849,10 +884,23 @@ export const useStore = create<AppState>()(
             syncToCloud(state.systemSettings, 'clients', newClient);
             syncToCloud(state.systemSettings, 'logs', newLog);
 
+            // EMAIL ALERT IF ASSIGNED BY ADMIN TO ANOTHER USER
+            if (specificOwnerId && specificOwnerId !== state.currentUser?.id) {
+                const targetBroker = state.users.find(u => u.id === specificOwnerId);
+                if (targetBroker) {
+                    const body = emailTemplates.leadAssigned(targetBroker.name, newClient.name, newClient.phone);
+                    sendSystemEmail({
+                        to: targetBroker.email,
+                        subject: `Novo Lead: ${newClient.name} foi adicionado à sua carteira.`,
+                        body
+                    }, state.systemSettings.smtpConfig);
+                }
+            }
+
             return { 
                 clients: [...state.clients, newClient],
                 logs: [newLog, ...state.logs],
-                notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Novo lead cadastrado!' }]
+                notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Novo lead cadastrado com sucesso!' }]
             };
           });
           return newId;
