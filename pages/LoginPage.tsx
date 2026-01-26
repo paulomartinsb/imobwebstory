@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useStore } from '../store';
 import { useNavigate } from 'react-router-dom';
-import { Building2, ArrowRight, Lock, Mail, AlertCircle, Info, Check } from 'lucide-react';
+import { Building2, ArrowRight, Lock, Mail, AlertCircle } from 'lucide-react';
 import { Button, Input } from '../components/ui/Elements';
 
 export const LoginPage: React.FC = () => {
@@ -28,11 +28,6 @@ export const LoginPage: React.FC = () => {
                 setIsLoading(false);
             }
         }, 800);
-    };
-
-    const fillCredentials = () => {
-        setEmail('admin@webimob.com');
-        setPassword('123456');
     };
 
     return (
@@ -74,31 +69,6 @@ export const LoginPage: React.FC = () => {
                         </div>
                         <h2 className="text-3xl font-bold text-slate-800">Acesse sua conta</h2>
                         <p className="text-slate-500 mt-2">Bem-vindo de volta! Insira suas credenciais.</p>
-                    </div>
-
-                    {/* Demo Credentials Box */}
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 flex flex-col gap-3 relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-blue-500"></div>
-                        <div className="flex items-start gap-3">
-                            <Info className="text-blue-600 shrink-0 mt-0.5" size={20} />
-                            <div className="flex-1">
-                                <h4 className="text-sm font-bold text-blue-900">Credenciais de Acesso (Demo)</h4>
-                                <div className="mt-2 grid grid-cols-1 gap-1 text-sm text-blue-800 font-mono bg-blue-100/50 p-2 rounded">
-                                    <div className="flex justify-between">
-                                        <span>User: admin@webimob.com</span>
-                                    </div>
-                                    <div className="flex justify-between">
-                                        <span>Pass: 123456</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <button 
-                            onClick={fillCredentials}
-                            className="text-xs font-semibold text-blue-700 hover:text-blue-900 flex items-center justify-end gap-1 mt-1 hover:underline"
-                        >
-                            <Check size={14} /> Preencher Automaticamente
-                        </button>
                     </div>
 
                     <form onSubmit={handleLogin} className="space-y-6">
