@@ -10,7 +10,7 @@ import { PropertyDetailModal } from '../components/PropertyDetailModal';
 type FilterTab = 'all' | 'active' | 'published' | 'unpublished' | 'incomplete' | 'reserved' | 'inactive' | 'pending';
 
 export const PropertiesPage: React.FC = () => {
-  const { properties, addProperty, updateProperty, updatePropertyStatus, rejectProperty, addNotification, currentUser, approveProperty, users, systemSettings } = useStore();
+  const { properties, addProperty, updateProperty, updatePropertyStatus, rejectProperty, removeProperty, addNotification, currentUser, approveProperty, users, systemSettings } = useStore();
   
   // --- States ---
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -47,6 +47,7 @@ export const PropertiesPage: React.FC = () => {
   // Permissions Check
   const isBroker = currentUser?.role === 'broker' || currentUser?.role === 'captator';
   const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
+  const isAdmin = currentUser?.role === 'admin';
 
   // Form State for New/Edit Property
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -377,6 +378,12 @@ export const PropertiesPage: React.FC = () => {
       });
       setIsModalOpen(true);
       setSelectedPropertyId(null);
+  }
+
+  const handleDeleteProperty = (id: string) => {
+      if (window.confirm('Tem certeza? Essa ação não pode ser desfeita.')) {
+          removeProperty(id);
+      }
   }
 
   const initiateStatusChange = (status: PropertyStatus) => {
@@ -735,9 +742,19 @@ export const PropertiesPage: React.FC = () => {
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleOpenEdit(property); }}
                                             className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors"
+                                            title="Editar"
                                         >
                                             <Edit3 size={16} />
                                         </button>
+                                        {isAdmin && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleDeleteProperty(property.id); }}
+                                                className="p-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+                                                title="Excluir"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             </div>

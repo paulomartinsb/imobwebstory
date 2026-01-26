@@ -9,6 +9,47 @@ import {
 import { Client, LeadSource, DetailedInterestProfile, LogEntry } from '../types';
 import { searchCep } from '../services/viaCep';
 
+const LogDiffViewer = ({ prev, curr }: { prev: any, curr: any }) => {
+    if (!prev || !curr) return null;
+
+    const ignoredKeys = ['updatedAt', 'lastContact', 'createdAt', 'visits', 'id', 'ownerId', 'nextVisit', 'interestedPropertyIds', 'documents', 'familyMembers', 'followers', 'interestProfile'];
+    
+    const changes = Object.keys(curr).filter(key => {
+        if (ignoredKeys.includes(key)) return false;
+        // Basic comparison
+        return JSON.stringify(prev[key]) !== JSON.stringify(curr[key]);
+    });
+
+    const profileChanged = JSON.stringify(prev.interestProfile) !== JSON.stringify(curr.interestProfile);
+
+    if (changes.length === 0 && !profileChanged) return null;
+
+    return (
+        <div className="mt-2 text-[11px] bg-slate-50 p-2 rounded border border-slate-100 space-y-1">
+            {changes.map(key => {
+                let valPrev = prev[key];
+                let valCurr = curr[key];
+                
+                // Format arrays slightly better
+                if(Array.isArray(valPrev)) valPrev = valPrev.join(', ');
+                if(Array.isArray(valCurr)) valCurr = valCurr.join(', ');
+
+                return (
+                    <div key={key} className="flex items-center gap-1.5 flex-wrap leading-tight">
+                        <span className="font-semibold text-slate-600 capitalize">{key}:</span>
+                        <span className="text-red-400 line-through opacity-75 max-w-[80px] truncate" title={String(valPrev)}>{String(valPrev ?? '-')}</span>
+                        <span className="text-slate-400 text-[10px]">➜</span>
+                        <span className="text-green-600 font-medium max-w-[80px] truncate" title={String(valCurr)}>{String(valCurr ?? '-')}</span>
+                    </div>
+                )
+            })}
+            {profileChanged && (
+                <div className="text-blue-600 font-medium">Perfil de interesse atualizado</div>
+            )}
+        </div>
+    );
+};
+
 export const LeadsPage: React.FC = () => {
     const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines, users, logs } = useStore();
     const [searchText, setSearchText] = useState('');
@@ -559,7 +600,7 @@ export const LeadsPage: React.FC = () => {
                                         Histórico de Atividades
                                     </h3>
                                     
-                                    <div className="space-y-6 relative before:absolute before:inset-0 before:ml-2.5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-slate-200 before:content-['']">
+                                    <div className="space-y-6">
                                         {logs.filter(l => l.entityId === viewClient.id).length === 0 && (
                                             <div className="text-xs text-slate-400 pl-6 italic">Sem histórico registrado.</div>
                                         )}
@@ -582,6 +623,9 @@ export const LeadsPage: React.FC = () => {
                                                         <p className="text-xs text-slate-500 mt-1 leading-relaxed">
                                                             {log.details}
                                                         </p>
+                                                        {log.action === 'update' && log.previousData && log.newData && (
+                                                            <LogDiffViewer prev={log.previousData} curr={log.newData} />
+                                                        )}
                                                         <span className="text-[10px] text-slate-400 mt-1">Por: {log.userName}</span>
                                                     </div>
                                                 </div>
@@ -599,7 +643,7 @@ export const LeadsPage: React.FC = () => {
                 </div>
             )}
 
-            {/* Add/Edit Lead Modal - UPDATED TO FULL PROFILE */}
+            {/* Add/Edit Lead Modal */}
             {isAddModalOpen && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">

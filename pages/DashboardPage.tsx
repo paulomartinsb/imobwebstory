@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Card, Button, Input } from '../components/ui/Elements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { Building, Users, Banknote, FileSignature, TrendingUp, Calendar, Clock, MapPin, User, ChevronRight, ChevronLeft, Filter, AlertTriangle, CheckCircle, Search, Activity } from 'lucide-react';
+import { Building, Users, Banknote, FileSignature, TrendingUp, Calendar, Clock, MapPin, User, ChevronRight, ChevronLeft, Filter, AlertTriangle, CheckCircle, Search, Activity, Shield } from 'lucide-react';
 import { useStore } from '../store';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
 import { Property } from '../types';
@@ -73,6 +73,9 @@ export const DashboardPage: React.FC = () => {
   // --- Calendar & Visits Logic ---
   // Get ALL visits from filtered clients
   const allVisits = filteredClients.flatMap(client => {
+      // Find broker for this client (for Admin View)
+      const broker = users.find(u => u.id === client.ownerId);
+
       return (client.visits || [])
         .filter(v => v.status !== 'cancelled') // Exclude cancelled visits
         .map(visit => {
@@ -96,6 +99,7 @@ export const DashboardPage: React.FC = () => {
           return {
               id: visit.id,
               clientName: client.name,
+              brokerName: broker?.name, // Add broker name to visit object
               date: new Date(visit.date),
               propertyCode: property?.code || 'S/ Ref',
               location: locationDisplay,
@@ -508,7 +512,14 @@ export const DashboardPage: React.FC = () => {
                                 <span className="text-lg font-bold text-slate-800">{v.date.getDate()}</span>
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="text-sm font-bold text-slate-800 truncate" title={v.clientName}>{v.clientName}</p>
+                                <div className="flex justify-between items-center gap-2">
+                                    <p className="text-sm font-bold text-slate-800 truncate" title={v.clientName}>{v.clientName}</p>
+                                    {isAdmin && selectedBrokerId === 'all' && v.brokerName && (
+                                        <span className="text-[9px] font-medium bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded border border-slate-200 truncate max-w-[80px]" title={`Corretor: ${v.brokerName}`}>
+                                            {v.brokerName.split(' ')[0]}
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-1 text-xs text-slate-500 mt-1">
                                     <Clock size={12} className="shrink-0" /> {v.date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                 </div>

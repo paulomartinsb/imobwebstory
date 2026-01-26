@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Badge, Button, Input, PhoneInput, formatPhone } from '../components/ui/Elements';
 import { Client, PipelineStageConfig, PropertyType, LeadSource, Property, Visit, DetailedInterestProfile } from '../types';
-import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock } from 'lucide-react';
+import { Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock } from 'lucide-react';
 import { calculateClientMatch, generatePipelineInsights, generateLeadCommercialInsights, findTopMatches } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
@@ -156,7 +156,6 @@ const ClientCard: React.FC<{
     onRescheduleVisit: (client: Client, visit: Visit) => void,
     onRemoveVisit: (clientId: string, visitId: string) => void
 }> = ({ client, onUpdate, onDelete, onMatch, onLink, onQuickVisit, onInsights, onEdit, onViewProperty, onCompleteVisit, onRescheduleVisit, onRemoveVisit }) => {
-    const [showMenu, setShowMenu] = useState(false);
     const { pipelines, users, properties, currentUser, systemSettings } = useStore();
     
     // Get stages for current pipeline
@@ -266,31 +265,9 @@ const ClientCard: React.FC<{
                     >
                         <Sparkles size={14} fill="currentColor" className="opacity-80 pointer-events-none" />
                     </button>
-                    <div className="relative">
-                        <button 
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setShowMenu(!showMenu); }}
-                            className="text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100"
-                        >
-                            <MoreHorizontal size={14} className="pointer-events-none" />
-                        </button>
-                        {showMenu && (
-                            <div className="absolute right-0 top-6 bg-white shadow-lg rounded-lg border border-slate-100 z-10 w-32 py-1 overflow-hidden">
-                                <button 
-                                    type="button"
-                                    onClick={(e) => { e.stopPropagation(); onEdit(client); setShowMenu(false); }}
-                                    className="flex items-center gap-2 w-full px-3 py-2 text-xs text-slate-600 hover:bg-slate-50 transition-colors"
-                                >
-                                    <Edit3 size={12} /> Editar
-                                </button>
-                            </div>
-                        )}
-                    </div>
                 </div>
             </div>
             
-            {showMenu && <div className="fixed inset-0 z-0" onClick={(e) => { e.stopPropagation(); setShowMenu(false); }}></div>}
-
             <div className="space-y-2 text-sm text-slate-500 mb-3 pl-5">
                 <div className="flex items-center gap-2 overflow-hidden text-ellipsis whitespace-nowrap">
                     <Phone size={12} className="shrink-0" /> {client.phone}
@@ -759,6 +736,40 @@ export const CRMPage: React.FC = () => {
       setRescheduleData({ date: visit.date.substring(0, 16), notes: visit.notes || '' });
   }
 
+  const handleConfirmCompleteVisit = () => {
+      if (!completingVisit) return;
+      
+      updateVisit(completingVisit.client.id, completingVisit.visit.id, {
+          status: 'completed',
+          feedback: visitFeedback.feedback,
+          positivePoints: visitFeedback.positive,
+          negativePoints: visitFeedback.negative,
+          liked: visitFeedback.liked
+      });
+      // Also update last contact
+      updateClient(completingVisit.client.id, { lastContact: new Date().toISOString() });
+      
+      addNotification('success', 'Visita concluída com sucesso!');
+      setCompletingVisit(null);
+      setVisitFeedback({ feedback: '', positive: '', negative: '', liked: true });
+  };
+
+  const handleConfirmReschedule = () => {
+      if (!reschedulingVisit || !rescheduleData.date) {
+          addNotification('error', 'A data é obrigatória.');
+          return;
+      }
+      
+      updateVisit(reschedulingVisit.client.id, reschedulingVisit.visit.id, {
+          date: rescheduleData.date,
+          notes: rescheduleData.notes,
+          status: 'scheduled'
+      });
+      
+      addNotification('success', 'Visita reagendada.');
+      setReschedulingVisit(null);
+  };
+
   // Helper for adding locations
   const [newLocation, setNewLocation] = useState('');
   const addLocation = () => {
@@ -836,13 +847,6 @@ export const CRMPage: React.FC = () => {
                     {p.name}
                 </button>
             ))}
-            <button 
-                onClick={() => setIsManagingPipelines(true)} // Note: Simplified for now, just to show UI
-                className="px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-600 flex items-center gap-1"
-                title="Configurar Funis"
-            >
-                <Settings size={14} />
-            </button>
         </div>
 
         <div className="flex-1 overflow-x-auto overflow-y-hidden">
@@ -1213,6 +1217,97 @@ export const CRMPage: React.FC = () => {
                             {linkSearchCode && linkMatchingProperties.length === 0 && (
                                 <p className="text-center text-xs text-slate-400 py-2">Nenhum imóvel encontrado.</p>
                             )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* COMPLETE VISIT MODAL (ADDED) */}
+        {completingVisit && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <CheckCircle size={20} className="text-green-600"/> Concluir Visita
+                        </h3>
+                        <button onClick={() => setCompletingVisit(null)}><X size={20} className="text-slate-400"/></button>
+                    </div>
+                    <div className="space-y-4">
+                        <p className="text-sm text-slate-500">
+                            Registre o feedback da visita com <span className="font-semibold text-slate-700">{completingVisit.client.name}</span>.
+                        </p>
+                        
+                        <div className="bg-slate-50 p-3 rounded-lg border border-slate-100">
+                            <p className="text-xs font-semibold text-slate-500 mb-2 uppercase">O cliente gostou do imóvel?</p>
+                            <div className="flex gap-4">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" name="liked" checked={visitFeedback.liked} onChange={() => setVisitFeedback({...visitFeedback, liked: true})} className="text-green-600 focus:ring-green-500" />
+                                    <span className="text-sm text-slate-700 flex items-center gap-1"><ThumbsUp size={14}/> Sim</span>
+                                </label>
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="radio" name="liked" checked={!visitFeedback.liked} onChange={() => setVisitFeedback({...visitFeedback, liked: false})} className="text-red-600 focus:ring-red-500" />
+                                    <span className="text-sm text-slate-700 flex items-center gap-1"><ThumbsDown size={14}/> Não</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 block mb-1">Feedback Geral</label>
+                            <textarea 
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20"
+                                placeholder="Comentários sobre a visita..."
+                                value={visitFeedback.feedback}
+                                onChange={e => setVisitFeedback({...visitFeedback, feedback: e.target.value})}
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button variant="outline" onClick={() => setCompletingVisit(null)}>Cancelar</Button>
+                            <Button onClick={handleConfirmCompleteVisit}>Concluir</Button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* RESCHEDULE VISIT MODAL (ADDED) */}
+        {reschedulingVisit && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                            <Edit3 size={20} className="text-blue-600"/> Reagendar Visita
+                        </h3>
+                        <button onClick={() => setReschedulingVisit(null)}><X size={20} className="text-slate-400"/></button>
+                    </div>
+                    <div className="space-y-4">
+                        <p className="text-sm text-slate-500">
+                            Defina uma nova data para a visita de <span className="font-semibold text-slate-700">{reschedulingVisit.client.name}</span>.
+                        </p>
+                        
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 block mb-1">Nova Data e Hora</label>
+                            <input 
+                                type="datetime-local" 
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                value={rescheduleData.date}
+                                onChange={e => setRescheduleData({...rescheduleData, date: e.target.value})}
+                            />
+                        </div>
+
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 block mb-1">Observações</label>
+                            <textarea 
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20"
+                                value={rescheduleData.notes}
+                                onChange={e => setRescheduleData({...rescheduleData, notes: e.target.value})}
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
+                            <Button variant="outline" onClick={() => setReschedulingVisit(null)}>Cancelar</Button>
+                            <Button onClick={handleConfirmReschedule}>Salvar</Button>
                         </div>
                     </div>
                 </div>

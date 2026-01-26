@@ -35,6 +35,7 @@ interface AppState {
   addProperty: (property: Omit<Property, 'id' | 'authorId' | 'status' | 'createdAt'>) => void;
   updateProperty: (propertyId: string, updates: Partial<Property>) => void;
   updatePropertyStatus: (propertyId: string, newStatus: PropertyStatus, reason?: string) => void;
+  removeProperty: (propertyId: string) => void; // Added removeProperty
   approveProperty: (propertyId: string) => void;
   rejectProperty: (propertyId: string, reason: string) => void;
   
@@ -728,6 +729,22 @@ export const useStore = create<AppState>()(
               properties: state.properties.map(p => p.id === propertyId ? newProperty : p),
               logs: [newLog, ...state.logs],
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'info', message: `Status do imóvel alterado para ${newStatus}.` }]
+          };
+      }),
+
+      removeProperty: (propertyId) => set((state) => {
+          const property = state.properties.find(p => p.id === propertyId);
+          if (!property) return state;
+
+          const newLog = createLog(state.currentUser, 'delete', 'property', propertyId, property.title, 'Imóvel excluído', property, undefined);
+          
+          syncToCloud(state.systemSettings, 'properties', propertyId, true); // Hard delete
+          syncToCloud(state.systemSettings, 'logs', newLog);
+
+          return {
+              properties: state.properties.filter(p => p.id !== propertyId),
+              logs: [newLog, ...state.logs],
+              notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Imóvel excluído com sucesso.' }]
           };
       }),
 

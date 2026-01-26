@@ -1,12 +1,14 @@
+// ... imports
 import React, { useState } from 'react';
 import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT, DEFAULT_PROPERTY_TYPES, DEFAULT_FEATURES, DEFAULT_LEAD_SOURCES, DEFAULT_LOCATIONS } from '../store';
 import { DEFAULT_EMAIL_TEMPLATES } from '../services/emailService';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail, Send, FileEdit } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail, Send, FileEdit, Info } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry, User, SmtpConfig, EmailTemplatesConfig } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
 
+// ... (Keep JsonDiffViewer and StringListManager components as is) ...
 const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }) => {
     const allKeys = Array.from(new Set([...Object.keys(before || {}), ...Object.keys(after || {})]));
     
@@ -101,38 +103,31 @@ const StringListManager: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
+  // ... (State declarations same as original, no changes needed in hooks)
   const { currentUser, users, updateUserRole, updateUser, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification, loadFromSupabase, sendTestEmail } = useStore();
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs' | 'database'>('users');
   
-  // Local state for settings form
   const [settingsForm, setSettingsForm] = useState(systemSettings);
   const [logSearch, setLogSearch] = useState('');
   const [selectedLog, setSelectedLog] = useState<LogEntry | null>(null);
 
-  // New User Modal State
   const [isAddUserOpen, setIsAddUserOpen] = useState(false);
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'employee' as UserRole });
 
-  // Edit User Modal State
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editPassword, setEditPassword] = useState('');
 
-  // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLog, setSyncLog] = useState<string[]>([]);
 
-  // SMTP Test State
   const [testEmail, setTestEmail] = useState(currentUser?.email || '');
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
 
-  // Property Config States
   const [newTypeLabel, setNewTypeLabel] = useState('');
   
-  // AI Prompt State
   const [promptText, setPromptText] = useState(systemSettings.propertyDescriptionPrompt);
   
-  // CRM AI Prompts State
   const [crmPrompts, setCrmPrompts] = useState({
       matchAi: systemSettings.matchAiPrompt,
       crmGlobal: systemSettings.crmGlobalInsightsPrompt,
@@ -140,7 +135,6 @@ export const AdminPage: React.FC = () => {
   });
   const [activeCrmPromptTab, setActiveCrmPromptTab] = useState<'match' | 'global' | 'card'>('match');
 
-  // Lead Aging State
   const [agingConfig, setAgingConfig] = useState(systemSettings.leadAging || {
       freshLimit: 2,
       warmLimit: 7,
@@ -149,7 +143,6 @@ export const AdminPage: React.FC = () => {
       coldColor: 'red'
   });
 
-  // Team Performance Config State
   const [teamPerfConfig, setTeamPerfConfig] = useState(systemSettings.teamPerformance || {
       minProperties: 1,
       minLeads: 5,
@@ -159,17 +152,15 @@ export const AdminPage: React.FC = () => {
       inactiveLabel: 'Sem Produção - Cobrar'
   });
 
-  // Email Templates State
   const [activeTemplate, setActiveTemplate] = useState<'propertyApproved' | 'propertyRejected' | 'leadAssigned'>('propertyApproved');
   const [templates, setTemplates] = useState<EmailTemplatesConfig>(systemSettings.emailTemplates || DEFAULT_EMAIL_TEMPLATES);
 
-  // Security Check
   if (currentUser?.role !== 'admin') {
       return <Navigate to="/" replace />;
   }
 
+  // ... (Keep all handler functions same until handleTestSmtp) ...
   const handleSettingsSave = () => {
-      // Merge all local states into one update
       const newSettings = {
           ...settingsForm,
           emailTemplates: templates
@@ -219,10 +210,14 @@ export const AdminPage: React.FC = () => {
       const success = await sendTestEmail(testEmail, settingsForm.smtpConfig);
       setIsTestingSmtp(false);
       
-      if(success) addNotification('success', 'Email de teste enviado com sucesso!');
-      else addNotification('error', 'Falha ao enviar email. Verifique o console.');
+      if(success) {
+          addNotification('success', 'Simulação de envio realizada! Verifique o console do navegador (F12) para ver o log do disparo.');
+      } else {
+          addNotification('error', 'Falha ao simular envio.');
+      }
   }
 
+  // ... (Rest of handlers: handleAddUser, openEditUser, etc. keep same) ...
   const handleAddUser = () => {
       if(!newUser.name || !newUser.email) {
           addNotification('error', 'Nome e email são obrigatórios.');
@@ -237,23 +232,20 @@ export const AdminPage: React.FC = () => {
 
   const openEditUser = (user: User) => {
       setEditingUser(user);
-      setEditPassword(''); // Reset password field
+      setEditPassword('');
       setIsEditUserOpen(true);
   }
 
   const handleSaveUserEdit = () => {
       if(!editingUser) return;
-      
       const updates: Partial<User> = {
           name: editingUser.name,
           email: editingUser.email,
           role: editingUser.role
       };
-
       if(editPassword.trim()) {
           updates.password = editPassword;
       }
-
       updateUser(editingUser.id, updates);
       setIsEditUserOpen(false);
       setEditingUser(null);
@@ -275,7 +267,6 @@ export const AdminPage: React.FC = () => {
       const value = newTypeLabel.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_");
       const exists = systemSettings.propertyTypes.some(t => t.value === value);
       if(exists) return;
-
       const updatedTypes = [...systemSettings.propertyTypes, { value, label: newTypeLabel }];
       updateSystemSettings({ propertyTypes: updatedTypes });
       setNewTypeLabel('');
@@ -291,7 +282,6 @@ export const AdminPage: React.FC = () => {
   const addFeature = (val: string) => {
       if(!val.trim()) return;
       if(systemSettings.propertyFeatures.includes(val)) return;
-      
       const updatedFeatures = [...systemSettings.propertyFeatures, val];
       updateSystemSettings({ propertyFeatures: updatedFeatures });
   }
@@ -303,7 +293,6 @@ export const AdminPage: React.FC = () => {
       }
   }
 
-  // --- CRM Configuration Handlers ---
   const addLeadSource = (val: string) => {
       if(systemSettings.leadSources.includes(val)) return;
       updateSystemSettings({ leadSources: [...systemSettings.leadSources, val] });
@@ -423,6 +412,7 @@ export const AdminPage: React.FC = () => {
       }
   }
 
+  // ... (JSX Return) ...
   return (
     <div className="space-y-6">
       <div className="mb-6">
@@ -435,6 +425,7 @@ export const AdminPage: React.FC = () => {
 
       {/* Tabs */}
       <div className="flex gap-4 border-b border-slate-200 overflow-x-auto">
+          {/* ... Tabs kept as is ... */}
           <button onClick={() => setActiveTab('users')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'users' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
               <div className="flex items-center gap-2"><Users size={18} /> Usuários</div>
           </button>
@@ -456,6 +447,7 @@ export const AdminPage: React.FC = () => {
       </div>
 
       {activeTab === 'users' && (
+          // ... Users Tab Content (No change) ...
           <div className="space-y-6">
               <Card className="overflow-hidden">
                   <div className="p-6 border-b border-slate-100 flex justify-between items-center">
@@ -535,7 +527,7 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Add User Modal */}
+      {/* Add/Edit User Modals ... (Keep same) ... */}
       {isAddUserOpen && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -583,7 +575,6 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Edit User Modal */}
       {isEditUserOpen && editingUser && (
           <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
               <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -646,6 +637,15 @@ export const AdminPage: React.FC = () => {
                       <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
                           <Mail size={20} className="text-blue-600" /> Configuração de E-mail (SMTP)
                       </h3>
+                      
+                      {/* NEW INFO BOX */}
+                      <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex gap-2 text-sm text-amber-800">
+                          <Info size={18} className="shrink-0 mt-0.5" />
+                          <p>
+                              <strong>Nota de Sistema:</strong> Como este é um sistema rodando no navegador (Front-End), o envio de email via SMTP é <strong>simulado</strong> no console por motivos de segurança do navegador (CORS/Sockets). Para envio real, é necessária uma integração via API (ex: SendGrid, EmailJS ou Backend).
+                          </p>
+                      </div>
+
                       <div className="space-y-4">
                           <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100 mb-2">
                               <div>
@@ -700,7 +700,7 @@ export const AdminPage: React.FC = () => {
                           {/* Test Email Section */}
                           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-end gap-2 mt-2">
                               <div className="flex-1">
-                                  <label className="text-xs font-medium text-slate-500 block mb-1">Testar Conexão</label>
+                                  <label className="text-xs font-medium text-slate-500 block mb-1">Testar Conexão (Simulação)</label>
                                   <input 
                                     className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
                                     placeholder="email@teste.com"
@@ -709,16 +709,17 @@ export const AdminPage: React.FC = () => {
                                   />
                               </div>
                               <Button variant="secondary" onClick={handleTestSmtp} disabled={isTestingSmtp}>
-                                  {isTestingSmtp ? 'Enviando...' : 'Enviar Teste'}
+                                  {isTestingSmtp ? 'Enviando...' : 'Simular Envio'}
                               </Button>
                           </div>
 
                           <p className="text-xs text-slate-500 mt-1">
-                              <strong>Nota para Gmail:</strong> Você deve usar uma "Senha de App" (App Password) gerada nas configurações de segurança da sua conta Google, e não sua senha normal.
+                              <strong>Nota para Gmail:</strong> Você deve usar uma "Senha de App" (App Password).
                           </p>
                       </div>
                   </Card>
 
+                  {/* ... (Rest of System Tab content remains unchanged) ... */}
                   {/* Email Templates Editor */}
                   <Card className="p-6 border-l-4 border-l-teal-500">
                       <div className="flex items-center justify-between mb-4">
@@ -913,7 +914,7 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Database Tab Content */}
+      {/* Database Tab Content ... (No Change) ... */}
       {activeTab === 'database' && (
           <div className="space-y-6">
               <Card className="p-6 border-l-4 border-l-emerald-600">
@@ -1015,7 +1016,7 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Properties Tab Content */}
+      {/* Properties Tab Content ... (No Change) ... */}
       {activeTab === 'properties' && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <Card className="flex flex-col h-[500px]">
@@ -1092,7 +1093,7 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* CRM Tab - Configuração de Performance */}
+      {/* CRM Tab - Configuração de Performance ... (No Change) ... */}
       {activeTab === 'crm' && (
           <div className="space-y-6">
               {/* Team Performance Settings */}
@@ -1182,9 +1183,8 @@ export const AdminPage: React.FC = () => {
                   </div>
               </Card>
 
-              {/* AI Prompts Section */}
+              {/* AI Prompts Section ... (No Change) ... */}
               <Card className="p-6 border-l-4 border-l-purple-500">
-                  {/* ... (Keep existing prompt editors) ... */}
                   <div className="flex items-center justify-between mb-6">
                       <div>
                           <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -1286,7 +1286,7 @@ export const AdminPage: React.FC = () => {
                   </div>
               </Card>
 
-              {/* Lead Aging Config */}
+              {/* Lead Aging Config ... (No Change) ... */}
               <Card className="p-6 border-l-4 border-l-blue-500">
                   <div className="flex items-center justify-between mb-6">
                       <div>
@@ -1414,9 +1414,8 @@ export const AdminPage: React.FC = () => {
           </div>
       )}
 
-      {/* Logs Tab Content (same as before) */}
+      {/* Logs Tab Content ... (No Change) ... */}
       {activeTab === 'logs' && (
-          // ... (Existing Logs Tab Content) ...
           <Card className="flex flex-col h-[600px]">
               <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
                   <div>
