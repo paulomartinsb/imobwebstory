@@ -5,6 +5,9 @@ let supabaseInstance: SupabaseClient | null = null;
 let currentUrl = '';
 let currentKey = '';
 
+// Track active channels to prevent duplication
+const activeChannels: Map<string, RealtimeChannel> = new Map();
+
 // Helper to get client dynamically with passed credentials, reusing instance if possible
 export const getSupabase = (url: string, key: string) => {
     if (!url || !key) {
@@ -19,6 +22,11 @@ export const getSupabase = (url: string, key: string) => {
     // Create new instance
     currentUrl = url;
     currentKey = key;
+    
+    // Clear old channels on new instance
+    activeChannels.forEach(ch => ch.unsubscribe());
+    activeChannels.clear();
+
     supabaseInstance = createClient(url, key, {
         auth: {
             persistSession: true,
@@ -26,7 +34,7 @@ export const getSupabase = (url: string, key: string) => {
         },
         realtime: {
             params: {
-                eventsPerSecond: 10,
+                eventsPerSecond: 20, // Increased for better drag responsiveness
             },
         },
     });
@@ -39,9 +47,12 @@ export const syncEntityToSupabase = async (table: string, data: any, url: string
     const supabase = getSupabase(url, key);
     if (!supabase) return { error: 'Supabase não configurado (URL ou Key ausentes)' };
 
+    // Ensure data is pure JSON
+    const cleanContent = JSON.parse(JSON.stringify(data));
+
     const payload = {
         id: data.id,
-        content: data,
+        content: cleanContent,
         updated_at: new Date().toISOString()
     };
 
@@ -81,12 +92,30 @@ export const fetchEntitiesFromSupabase = async (table: string, url: string, key:
             return { data: [], error };
         }
 
-        const entities = data.map((row: any) => row.content);
+        const entities = data.map((row: any) => {
+            // Handle potential stringified JSON if column type varies
+            if (typeof row.content === 'string') {
+                try { return JSON.parse(row.content); } catch (e) { return row.content; }
+            }
+            return row.content;
+        });
+        
         return { data: entities, error: null };
     } catch (err) {
         console.error(err);
         return { data: [], error: err };
     }
+};
+
+// Unsubscribe helper
+export const unsubscribeAll = async () => {
+    const promises: Promise<any>[] = [];
+    activeChannels.forEach((channel) => {
+        promises.push(channel.unsubscribe());
+    });
+    await Promise.all(promises);
+    activeChannels.clear();
+    console.log("[Realtime] Todos os canais desconectados.");
 };
 
 // Realtime Subscription Helper
@@ -101,10 +130,19 @@ export const subscribeToTable = (
     const supabase = getSupabase(url, key);
     if (!supabase) return null;
 
-    // Use a simplified channel name to avoid potential collision issues in this specific setup
     const channelName = `public:${table}`;
 
-    return supabase
+    // Deduplication: If channel exists and is joined, don't recreate
+    if (activeChannels.has(channelName)) {
+        const existing = activeChannels.get(channelName);
+        if(existing && (existing.state === 'joined' || existing.state === 'joining')) {
+            return existing;
+        }
+        // If closed or errored, remove and recreate
+        activeChannels.delete(channelName);
+    }
+
+    const channel = supabase
         .channel(channelName)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: table }, (payload) => onInsert(payload.new))
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: table }, (payload) => onUpdate(payload.new))
@@ -115,6 +153,13 @@ export const subscribeToTable = (
             }
             if (status === 'CHANNEL_ERROR') {
                 console.error(`[Realtime] Erro no canal ${table}`);
+                activeChannels.delete(channelName);
+            }
+            if (status === 'CLOSED') {
+                activeChannels.delete(channelName);
             }
         });
+        
+    activeChannels.set(channelName, channel);
+    return channel;
 };

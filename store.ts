@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit, SmtpConfig } from './types';
-import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable } from './services/supabaseClient';
+import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable, unsubscribeAll } from './services/supabaseClient';
 import { sendSystemEmail, DEFAULT_EMAIL_TEMPLATES } from './services/emailService';
 
 // ... (Interface declarations remain unchanged) ...
@@ -72,6 +72,7 @@ interface AppState {
   // Sync Actions
   loadFromSupabase: () => Promise<void>;
   subscribeToRealtime: () => void;
+  unsubscribeFromRealtime: () => void;
 }
 
 // ... (DEFAULT_ADMIN, DEFAULT_PIPELINE, Constants, Helper functions remain unchanged) ...
@@ -416,6 +417,10 @@ export const useStore = create<AppState>()(
           }
       },
 
+      unsubscribeFromRealtime: () => {
+          unsubscribeAll();
+      },
+
       subscribeToRealtime: () => {
           const state = get();
           const envUrl = getEnv('VITE_SUPABASE_URL');
@@ -426,16 +431,20 @@ export const useStore = create<AppState>()(
           if (!supabaseUrl || !supabaseAnonKey) return;
 
           const handleUpdate = (table: string, payload: any, type: 'INSERT' | 'UPDATE' | 'DELETE') => {
-              // Extract ID: payload.id (DELETE) or payload.content.id (INSERT/UPDATE)
-              // Note: When Supabase triggers a DELETE, the payload usually contains the 'old' record with just the ID.
+              // Safe Payload Extraction
               const id = payload.id || (payload.content && payload.content.id);
-              const data = payload.content;
+              let data = payload.content;
+
+              // Ensure data is parsed if it comes as string (Supabase quirk depending on JSON/JSONB)
+              if (typeof data === 'string') {
+                  try { data = JSON.parse(data); } catch(e) { console.error('Failed to parse realtime payload', e); return; }
+              }
 
               if(!id) return; 
 
               set((current) => {
                   const updates: any = {};
-                  const stateKey = table as keyof AppState; // Assumes table names match state keys (properties, clients, etc.)
+                  const stateKey = table as keyof AppState; 
 
                   // Special Case: System Settings
                   if (table === 'system_settings') {
@@ -443,7 +452,6 @@ export const useStore = create<AppState>()(
                           updates.systemSettings = { 
                               ...current.systemSettings, 
                               ...data,
-                              // Preserve credentials if not present in payload to avoid lockout
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
                               supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey,
                           };
@@ -453,7 +461,7 @@ export const useStore = create<AppState>()(
                       return updates;
                   }
 
-                  // Generic List Update (Properties, Clients, Users, Pipelines)
+                  // Generic List Update
                   if (current[stateKey] && Array.isArray(current[stateKey])) {
                       const currentList = current[stateKey] as any[];
                       
@@ -463,6 +471,7 @@ export const useStore = create<AppState>()(
                           // INSERT or UPDATE
                           const exists = currentList.find(item => item.id === id);
                           if (exists) {
+                              // Force new array reference to trigger React re-render
                               updates[stateKey] = currentList.map(item => item.id === id ? data : item);
                           } else {
                               updates[stateKey] = [...currentList, data];
@@ -474,7 +483,7 @@ export const useStore = create<AppState>()(
               });
           };
 
-          const tables = ['properties', 'clients', 'users', 'pipelines', 'system_settings'];
+          const tables = ['properties', 'clients', 'users', 'pipelines', 'system_settings', 'logs'];
           
           tables.forEach(table => {
               subscribeToTable(table, supabaseUrl, supabaseAnonKey, 

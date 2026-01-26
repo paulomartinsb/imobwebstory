@@ -3,7 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Badge, Button, Input, PhoneInput, formatPhone } from '../components/ui/Elements';
 import { Client, PipelineStageConfig, PropertyType, LeadSource, Property, Visit, DetailedInterestProfile } from '../types';
-import { Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock, CalendarCheck } from 'lucide-react';
+import { Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link as LinkIcon, CalendarPlus, Bath, Car, Building, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock, CalendarCheck } from 'lucide-react';
 import { calculateClientMatch, generatePipelineInsights, generateLeadCommercialInsights, findTopMatches } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
@@ -66,6 +66,11 @@ const KanbanColumn: React.FC<{
       }
   };
 
+  // Helper to safely stop propagation on interactive elements inside draggable
+  const stopProp = (e: React.MouseEvent | React.PointerEvent) => {
+      e.stopPropagation();
+  };
+
   return (
     <div 
         className={`flex-1 min-w-[280px] md:min-w-[300px] flex flex-col h-full max-h-full transition-colors rounded-xl ${isDragOver ? 'bg-primary-50 ring-2 ring-primary-300 ring-inset' : ''}`}
@@ -96,7 +101,9 @@ const KanbanColumn: React.FC<{
                     className="w-full pl-7 pr-2 py-1 text-xs border border-slate-200 rounded bg-slate-50 focus:bg-white focus:outline-none focus:border-primary-300 transition-colors"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
+                    onClick={stopProp}
+                    onMouseDown={stopProp}
+                    onPointerDown={stopProp}
                 />
             </div>
         </div>
@@ -107,6 +114,8 @@ const KanbanColumn: React.FC<{
             {isFirst && !searchTerm && (
                 <button 
                     onClick={(e) => { e.stopPropagation(); onQuickAdd(); }}
+                    onMouseDown={stopProp}
+                    onPointerDown={stopProp}
                     className="w-full py-3 border-2 border-dashed border-slate-300 rounded-xl text-slate-400 font-medium flex items-center justify-center gap-2 hover:border-primary-400 hover:text-primary-600 hover:bg-white/50 transition-all group opacity-70 hover:opacity-100"
                 >
                     <Plus size={18} className="group-hover:scale-110 transition-transform"/>
@@ -201,6 +210,16 @@ const ClientCard: React.FC<{
         e.dataTransfer.effectAllowed = 'move';
     };
 
+    // Safe handler to prevent drag initiation on interactive elements
+    const safeAction = (e: React.MouseEvent | React.PointerEvent, action: () => void) => {
+        e.stopPropagation();
+        action();
+    };
+
+    const stopPropagation = (e: React.MouseEvent | React.PointerEvent) => {
+        e.stopPropagation();
+    };
+
     const getAgingColor = () => {
         const lastContactDate = new Date(client.lastContact || client.createdAt);
         const diffTime = Math.abs(new Date().getTime() - lastContactDate.getTime());
@@ -231,7 +250,7 @@ const ClientCard: React.FC<{
         <Card 
             className={`p-4 cursor-grab active:cursor-grabbing hover:shadow-md transition-all group border-l-4 relative bg-white ${agingBorderClass}`}
             onClick={(e: React.MouseEvent) => e.stopPropagation()} 
-            onDoubleClick={(e: React.MouseEvent) => { e.stopPropagation(); onEdit(client); }}
+            onDoubleClick={(e: React.MouseEvent) => safeAction(e, () => onEdit(client))}
             draggable 
             onDragStart={handleDragStart}
         >
@@ -251,16 +270,20 @@ const ClientCard: React.FC<{
                 <div className="flex items-center gap-1 absolute top-3 right-3">
                     <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onQuickVisit(client); }}
-                        className="text-blue-500 hover:text-blue-700 p-1 rounded-full hover:bg-blue-50 transition-colors"
+                        onClick={(e) => safeAction(e, () => onQuickVisit(client))}
+                        onMouseDown={stopPropagation}
+                        onPointerDown={stopPropagation}
+                        className="text-blue-500 hover:text-blue-700 p-1 rounded-full hover:bg-blue-50 transition-colors z-10 relative"
                         title="Agendar Visita"
                     >
                         <CalendarPlus size={14} className="pointer-events-none" />
                     </button>
                     <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); onInsights(client); }}
-                        className="text-amber-500 hover:text-amber-600 p-1 rounded-full hover:bg-amber-50 transition-colors"
+                        onClick={(e) => safeAction(e, () => onInsights(client))}
+                        onMouseDown={stopPropagation}
+                        onPointerDown={stopPropagation}
+                        className="text-amber-500 hover:text-amber-600 p-1 rounded-full hover:bg-amber-50 transition-colors z-10 relative"
                         title="Insights Comerciais (IA)"
                     >
                         <Sparkles size={14} fill="currentColor" className="opacity-80 pointer-events-none" />
@@ -332,9 +355,27 @@ const ClientCard: React.FC<{
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1">
-                                    <button onClick={(e) => { e.stopPropagation(); onCompleteVisit(client, visit); }} className="text-green-600 hover:text-green-700 bg-white hover:bg-green-50 p-1 rounded-full border border-primary-200 hover:border-green-200 transition-all"><CheckCircle size={14} className="pointer-events-none" /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); onRescheduleVisit(client, visit); }} className="text-blue-500 hover:text-blue-700 bg-white hover:bg-blue-50 p-1 rounded-full border border-primary-200 hover:border-blue-200 transition-all"><Edit3 size={14} className="pointer-events-none" /></button>
-                                    <button onClick={(e) => { e.stopPropagation(); onRemoveVisit(client.id, visit.id); }} className="text-slate-400 hover:text-red-600 bg-white hover:bg-red-50 p-1 rounded-full border border-slate-200 hover:border-red-200 transition-all"><Trash2 size={14} className="pointer-events-none" /></button>
+                                    <button 
+                                        onClick={(e) => safeAction(e, () => onCompleteVisit(client, visit))} 
+                                        onMouseDown={stopPropagation}
+                                        onPointerDown={stopPropagation}
+                                        className="text-green-600 hover:text-green-700 bg-white hover:bg-green-50 p-1 rounded-full border border-primary-200 hover:border-green-200 transition-all z-10 relative">
+                                        <CheckCircle size={14} className="pointer-events-none" />
+                                    </button>
+                                    <button 
+                                        onClick={(e) => safeAction(e, () => onRescheduleVisit(client, visit))} 
+                                        onMouseDown={stopPropagation}
+                                        onPointerDown={stopPropagation}
+                                        className="text-blue-500 hover:text-blue-700 bg-white hover:bg-blue-50 p-1 rounded-full border border-primary-200 hover:border-blue-200 transition-all z-10 relative">
+                                        <Edit3 size={14} className="pointer-events-none" />
+                                    </button>
+                                    <button 
+                                        onClick={(e) => safeAction(e, () => onRemoveVisit(client.id, visit.id))} 
+                                        onMouseDown={stopPropagation}
+                                        onPointerDown={stopPropagation}
+                                        className="text-slate-400 hover:text-red-600 bg-white hover:bg-red-50 p-1 rounded-full border border-slate-200 hover:border-red-200 transition-all z-10 relative">
+                                        <Trash2 size={14} className="pointer-events-none" />
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -346,8 +387,10 @@ const ClientCard: React.FC<{
                         {linkedProperties.map((prop, idx) => (
                             <button 
                                 key={idx} 
-                                onClick={(e) => { e.stopPropagation(); onViewProperty(prop); }}
-                                className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded font-mono font-medium hover:bg-indigo-100 hover:border-indigo-300 transition-colors cursor-pointer"
+                                onClick={(e) => safeAction(e, () => onViewProperty(prop))}
+                                onMouseDown={stopPropagation}
+                                onPointerDown={stopPropagation}
+                                className="text-[10px] bg-indigo-50 text-indigo-700 border border-indigo-100 px-1.5 py-0.5 rounded font-mono font-medium hover:bg-indigo-100 hover:border-indigo-300 transition-colors cursor-pointer z-10 relative"
                                 title="Ver Detalhes do Imóvel"
                             >
                                 {prop.code}
@@ -358,29 +401,50 @@ const ClientCard: React.FC<{
             </div>
 
             <div className="flex gap-2 mb-3 pl-5">
-                <button type="button" onClick={(e) => { e.stopPropagation(); onMatch(client); }} className="flex-1 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded flex items-center justify-center gap-1 transition-colors border border-indigo-100"><Sparkles size={12} className="pointer-events-none" /> Match IA</button>
-                <button type="button" onClick={(e) => { e.stopPropagation(); onLink(client); }} className="flex-1 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded flex items-center justify-center gap-1 transition-colors border border-slate-200"><Link size={12} className="pointer-events-none" /> Vincular</button>
+                <button 
+                    type="button" 
+                    onClick={(e) => safeAction(e, () => onMatch(client))} 
+                    onMouseDown={stopPropagation}
+                    onPointerDown={stopPropagation}
+                    className="flex-1 py-1.5 text-xs font-medium text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded flex items-center justify-center gap-1 transition-colors border border-indigo-100 z-10 relative">
+                    <Sparkles size={12} className="pointer-events-none" /> Match IA
+                </button>
+                <button 
+                    type="button" 
+                    onClick={(e) => safeAction(e, () => onLink(client))} 
+                    onMouseDown={stopPropagation}
+                    onPointerDown={stopPropagation}
+                    className="flex-1 py-1.5 text-xs font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 rounded flex items-center justify-center gap-1 transition-colors border border-slate-200 z-10 relative">
+                    <LinkIcon size={12} className="pointer-events-none" /> Vincular
+                </button>
             </div>
 
             <div className="pt-2 border-t border-slate-100 flex justify-between items-center pl-5">
                 <span className="text-[10px] text-slate-400 font-medium">{entryDateStr} <span className="text-slate-300">•</span> {daysSinceEntry} dias</span>
                 {stages.length > 0 && (
-                    <select className="text-[10px] bg-slate-100 border-none rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary-500 max-w-[100px] cursor-pointer" value={client.stage} onChange={(e) => onUpdate(client.id, { stage: e.target.value })} onClick={(e) => e.stopPropagation()}>
-                        {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
+                    <div 
+                        onMouseDown={stopPropagation} 
+                        onPointerDown={stopPropagation}
+                        className="relative z-10"
+                    >
+                        <select 
+                            className="text-[10px] bg-slate-100 border-none rounded px-1.5 py-0.5 outline-none focus:ring-1 focus:ring-primary-500 max-w-[100px] cursor-pointer" 
+                            value={client.stage} 
+                            onChange={(e) => onUpdate(client.id, { stage: e.target.value })} 
+                            onClick={stopPropagation}
+                        >
+                            {stages.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                    </div>
                 )}
             </div>
         </Card>
     )
 }
 
-// --- Main Page ---
-
 export const CRMPage: React.FC = () => {
-  // ... (Hooks and States - Unchanged, just ensuring correct usage) ...
   const { clients, properties, updateClient, removeClient, currentUser, addClient, addNotification, pipelines, addPipeline, updatePipeline, deletePipeline, addPipelineStage, updatePipelineStage, deletePipelineStage, users, moveClientToPipeline, systemSettings, addVisit, updateVisit, removeVisit, markLeadAsLost } = useStore();
   
-  // ... (Keep existing state declarations)
   const [currentPipelineId, setCurrentPipelineId] = useState<string>(pipelines[0]?.id || '');
   const [isManagingPipelines, setIsManagingPipelines] = useState(false);
   const currentPipeline = pipelines.find(p => p.id === currentPipelineId);
@@ -418,13 +482,11 @@ export const CRMPage: React.FC = () => {
   const [selectedClientForVisit, setSelectedClientForVisit] = useState<Client | null>(null);
   const [editingClientId, setEditingClientId] = useState<string | null>(null);
 
-  // Match AI New States
-  const [matchTolerance, setMatchTolerance] = useState(20); // Percentage
+  const [matchTolerance, setMatchTolerance] = useState(20); 
   const [maxMatches, setMaxMatches] = useState(5);
   const [matchResults, setMatchResults] = useState<Array<{ propertyId: string, score: number, reason: string }>>([]);
   const [isMatching, setIsMatching] = useState(false);
 
-  // ... (Other states remain same)
   const [filterType, setFilterType] = useState<PropertyType | 'all'>('all');
   const [filterLocation, setFilterLocation] = useState('');
   const [filterBedrooms, setFilterBedrooms] = useState(0);
@@ -433,7 +495,6 @@ export const CRMPage: React.FC = () => {
   const [filterArea, setFilterArea] = useState(0);
 
   const [analyzingPropertyId, setAnalyzingPropertyId] = useState<string | null>(null);
-  
   const [bestMatchSuggestion, setBestMatchSuggestion] = useState<{property: Property, reason: string} | null>(null);
   const [isLoadingBestMatch, setIsLoadingBestMatch] = useState(false);
 
@@ -445,7 +506,6 @@ export const CRMPage: React.FC = () => {
   const [isCepLoading, setIsCepLoading] = useState(false);
   const [foundClient, setFoundClient] = useState<Client | null>(null);
 
-  // Visit Scheduling inside "New Lead"
   const [scheduleVisitNow, setScheduleVisitNow] = useState(false);
   const [newVisitDate, setNewVisitDate] = useState('');
   const [newVisitPropertyCode, setNewVisitPropertyCode] = useState('');
@@ -479,10 +539,8 @@ export const CRMPage: React.FC = () => {
   };
   const [formData, setFormData] = useState(initialFormState);
 
-  // Helper to retrieve editing client for rendering visit history in modal
   const editingClient = editingClientId ? clients.find(c => c.id === editingClientId) : null;
 
-  // ... (All Helper functions like toggleProfileList, handleDropClient, etc. preserved) ...
   const toggleProfileList = (field: keyof DetailedInterestProfile, value: string) => {
       setFormData(prev => {
           const list = prev.interestProfile[field] as string[];
@@ -598,7 +656,6 @@ export const CRMPage: React.FC = () => {
     setSelectedClientForMatch(client);
     setMatchResults([]); // Clear previous results
     setMatchModalOpen(true);
-    // Optionally trigger immediately, but better to let user check filters first
     runMatchAnalysis(client);
   };
 
@@ -606,7 +663,6 @@ export const CRMPage: React.FC = () => {
       if(!client) return;
       setIsMatching(true);
       
-      // 1. Filter locally first based on tolerance
       const maxPrice = client.budget * (1 + matchTolerance/100);
       const minPrice = (client.minBudget || 0) * (1 - matchTolerance/100);
       
@@ -618,7 +674,6 @@ export const CRMPage: React.FC = () => {
           (client.interest.length === 0 || client.interest.includes(p.type))
       );
 
-      // 2. Send to AI
       const results = await findTopMatches(client, candidates, maxMatches);
       setMatchResults(results);
       setIsMatching(false);
@@ -631,7 +686,6 @@ export const CRMPage: React.FC = () => {
 
   const handleEdit = (client: Client) => {
       setEditingClientId(client.id);
-      // Map client data to form data
       setFormData({
           name: client.name,
           email: client.email,
@@ -674,9 +728,8 @@ export const CRMPage: React.FC = () => {
       interest: formData.interestProfile.propertyTypes || [],
       desiredLocation: formData.interestProfile.neighborhoods || [],
       notes: formData.interestProfile.notes,
-      // Mapping detail fields to root client object for compatibility
       minBedrooms: formData.interestProfile.minBedrooms,
-      minBathrooms: formData.interestProfile.minSuites, // Mapping suites to bathrooms for simple check
+      minBathrooms: formData.interestProfile.minSuites, 
       minParking: formData.interestProfile.minParking,
       minArea: formData.interestProfile.minArea,
       desiredFeatures: formData.interestProfile.mustHaveFeatures
@@ -687,7 +740,6 @@ export const CRMPage: React.FC = () => {
         addNotification('success', 'Lead atualizado.');
     } else {
         const defaultPipeline = pipelines[0];
-        // Create Client and Get ID
         const newClientId = addClient({
             ...payload,
             pipelineId: currentPipelineId || defaultPipeline?.id,
@@ -698,7 +750,6 @@ export const CRMPage: React.FC = () => {
             followers: []
         });
 
-        // Handle Immediate Visit Scheduling
         if (newClientId && scheduleVisitNow && newVisitDate && newVisitPropertyCode) {
             const property = properties.find(p => p.code === newVisitPropertyCode);
             if (property) {
@@ -717,7 +768,6 @@ export const CRMPage: React.FC = () => {
     setEditLeadOpen(false);
     setEditingClientId(null);
     setFormData(initialFormState);
-    // Reset Visit Data
     setScheduleVisitNow(false);
     setNewVisitDate('');
     setNewVisitPropertyCode('');
@@ -750,7 +800,6 @@ export const CRMPage: React.FC = () => {
           negativePoints: visitFeedback.negative,
           liked: visitFeedback.liked
       });
-      // Also update last contact
       updateClient(completingVisit.client.id, { lastContact: new Date().toISOString() });
       
       addNotification('success', 'Visita concluída com sucesso!');
@@ -774,7 +823,6 @@ export const CRMPage: React.FC = () => {
       setReschedulingVisit(null);
   };
 
-  // Helper for adding locations
   const [newLocation, setNewLocation] = useState('');
   const addLocation = () => {
       if (newLocation.trim()) {
@@ -808,12 +856,10 @@ export const CRMPage: React.FC = () => {
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)]">
-        {/* ... (Header and Pipeline Tabs remain same) ... */}
         <div className="flex justify-between items-center mb-4 shrink-0">
             <div className="flex items-center gap-4">
                 <h1 className="text-2xl font-bold text-slate-800">CRM</h1>
                 
-                {/* Admin Filter */}
                 {isStaff && (
                     <div className="hidden md:flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
                         <Filter size={14} className="text-slate-400" />
@@ -841,7 +887,6 @@ export const CRMPage: React.FC = () => {
             </div>
         </div>
 
-        {/* Pipeline Selector / Tabs */}
         <div className="flex items-center gap-4 mb-4 border-b border-slate-200 pb-1 overflow-x-auto">
             {pipelines.map(p => (
                 <button
@@ -878,7 +923,6 @@ export const CRMPage: React.FC = () => {
                     />
                 ))}
                 
-                {/* Fixed Lost Zone Column */}
                 <div 
                     className="w-[280px] md:w-[300px] flex flex-col h-full rounded-xl border-2 border-dashed border-red-100 bg-red-50/20"
                     onDragOver={(e) => e.preventDefault()}
@@ -896,7 +940,6 @@ export const CRMPage: React.FC = () => {
         {(addLeadOpen || editLeadOpen) && (
              <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                  <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
-                     {/* Modal Header */}
                      <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
                          <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
                              <UserPlus size={22} className="text-primary-600"/>
@@ -908,8 +951,6 @@ export const CRMPage: React.FC = () => {
                      </div>
 
                      <form onSubmit={handleSubmit} className="flex-1 p-6 space-y-8 overflow-y-auto">
-                         {/* ... (Form Sections 1 & 2 omitted - kept same) ... */}
-                         {/* SECTION 1: BASIC INFO */}
                          <div className="space-y-4">
                              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Dados do Contato</h3>
                              <Input label="Nome Completo" required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} placeholder="Ex: João da Silva" />
@@ -939,7 +980,6 @@ export const CRMPage: React.FC = () => {
                              )}
                          </div>
 
-                         {/* SECTION 2: INTEREST PROFILE */}
                          <div className="space-y-5">
                              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Perfil de Interesse</h3>
                              
@@ -1015,7 +1055,6 @@ export const CRMPage: React.FC = () => {
                              </div>
                          </div>
 
-                         {/* SECTION 3: VISIT HISTORY & FEEDBACKS (NEW) */}
                          {editingClientId && editingClient && editingClient.visits.length > 0 && (
                              <div className="space-y-4 pt-4 border-t border-slate-100">
                                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
@@ -1051,90 +1090,272 @@ export const CRMPage: React.FC = () => {
                              </div>
                          )}
 
-                         {/* SECTION 4: VISIT SCHEDULE (Only for New) */}
-                         {!editingClientId && (
-                             <div className="space-y-6 pt-4 border-t border-slate-100">
-                                 <div className="flex items-center justify-between">
-                                     <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Agendamento de Visita</h3>
-                                     <div className="flex items-center gap-3">
-                                         <span className="text-xs text-slate-500">Agendar agora?</span>
-                                         <label className="relative inline-flex items-center cursor-pointer">
-                                             <input type="checkbox" className="sr-only peer" checked={scheduleVisitNow} onChange={(e) => setScheduleVisitNow(e.target.checked)} />
-                                             <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                                         </label>
-                                     </div>
-                                 </div>
-
-                                 {scheduleVisitNow && (
-                                     <div className="space-y-4 p-4 bg-blue-50 border border-blue-100 rounded-lg animate-in fade-in slide-in-from-top-2">
-                                         <div className="grid grid-cols-2 gap-4">
-                                             <div>
-                                                 <label className="text-sm font-medium text-slate-700 block mb-1">Data e Hora</label>
-                                                 <input 
-                                                     type="datetime-local" 
-                                                     className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
-                                                     value={newVisitDate}
-                                                     onChange={e => setNewVisitDate(e.target.value)}
-                                                 />
-                                             </div>
-                                             
-                                             <div className="relative">
-                                                 <label className="text-sm font-medium text-slate-700 block mb-1">Imóvel (Código ou Nome)</label>
-                                                 <div className="relative">
-                                                     <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                                                     <input 
-                                                         type="text" 
-                                                         className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
-                                                         placeholder="Buscar imóvel..."
-                                                         value={newVisitPropertyCode}
-                                                         onChange={handlePropertySearchChange}
-                                                     />
-                                                 </div>
-                                                 {/* Dropdown Results */}
-                                                 {matchingProperties.length > 0 && (
-                                                     <div className="absolute z-10 w-full bg-white border border-slate-200 rounded-lg shadow-lg mt-1 max-h-40 overflow-y-auto">
-                                                         {matchingProperties.map(p => (
-                                                             <button 
-                                                                 key={p.id}
-                                                                 type="button"
-                                                                 className="w-full text-left px-4 py-2 text-sm hover:bg-slate-50 flex flex-col border-b border-slate-50"
-                                                                 onClick={() => handlePropertySelect(p)}
-                                                             >
-                                                                 <span className="font-semibold text-slate-800">{p.code} - {p.title}</span>
-                                                                 <span className="text-xs text-slate-500">{p.address}</span>
-                                                             </button>
-                                                         ))}
-                                                     </div>
-                                                 )}
-                                             </div>
-                                         </div>
-                                         
-                                         <div>
-                                             <label className="text-sm font-medium text-slate-700 block mb-1">Observações da Visita</label>
-                                             <textarea 
-                                                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20"
-                                                 placeholder="Instruções de acesso, chaves, etc."
-                                                 value={newVisitNotes}
-                                                 onChange={e => setNewVisitNotes(e.target.value)}
-                                             />
-                                         </div>
-                                     </div>
-                                 )}
-                             </div>
-                         )}
+                         <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+                             <Button type="button" variant="outline" onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }}>Cancelar</Button>
+                             <Button onClick={handleSubmit} className="gap-2">
+                                 <Save size={18} /> {editingClientId ? 'Salvar Alterações' : 'Cadastrar Lead'}
+                             </Button>
+                         </div>
                      </form>
-
-                     <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
-                         <Button type="button" variant="outline" onClick={() => { setAddLeadOpen(false); setEditLeadOpen(false); }}>Cancelar</Button>
-                         <Button onClick={handleSubmit} className="gap-2">
-                             <Save size={18} /> {editingClientId ? 'Salvar Alterações' : 'Cadastrar Lead'}
-                         </Button>
-                     </div>
                  </div>
              </div>
         )}
         
-        {/* ... (Rest of Modals ViewProperty, QuickVisit, LinkProperty, CompleteVisit, RescheduleVisit, MatchModal, LeadInsights, LostModal remain same) ... */}
+        {/* Match Modal */}
+        {matchModalOpen && selectedClientForMatch && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl animate-in fade-in zoom-in duration-200 flex flex-col max-h-[85vh]">
+                    <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                        <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                            <Sparkles className="text-indigo-600" /> Match IA
+                        </h2>
+                        <button onClick={() => setMatchModalOpen(false)}><X size={24} className="text-slate-400" /></button>
+                    </div>
+                    <div className="p-6 flex-1 overflow-y-auto">
+                        <p className="text-sm text-slate-600 mb-4">
+                            Encontrando imóveis compatíveis para <strong>{selectedClientForMatch.name}</strong> com base no perfil de interesse.
+                        </p>
+                        
+                        {isMatching ? (
+                            <div className="flex flex-col items-center justify-center py-8 text-indigo-600">
+                                <Loader2 size={40} className="animate-spin mb-3" />
+                                <p className="text-sm font-medium">Analisando compatibilidade...</p>
+                            </div>
+                        ) : matchResults.length > 0 ? (
+                            <div className="space-y-3">
+                                {matchResults.map((match, idx) => {
+                                    const prop = properties.find(p => p.id === match.propertyId);
+                                    if(!prop) return null;
+                                    return (
+                                        <div key={idx} className="border border-slate-200 rounded-xl p-3 hover:border-indigo-300 transition-colors">
+                                            <div className="flex justify-between items-start mb-2">
+                                                <h4 className="font-bold text-slate-800">{prop.title}</h4>
+                                                <Badge color={match.score > 80 ? 'green' : 'yellow'}>{match.score}% Match</Badge>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mb-2">{match.reason}</p>
+                                            <div className="flex gap-2 mt-2">
+                                                <Button className="text-xs h-8" onClick={() => setViewProperty(prop)}>Ver Imóvel</Button>
+                                                <Button variant="outline" className="text-xs h-8" onClick={() => {
+                                                    toggleLinkedProperty(prop.id);
+                                                    addNotification('success', 'Imóvel vinculado ao interesse do cliente.');
+                                                }}>
+                                                    {selectedClientForMatch.interestedPropertyIds?.includes(prop.id) ? 'Desvincular' : 'Vincular'}
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        ) : (
+                            <div className="text-center py-8 text-slate-400">
+                                <Search size={32} className="mx-auto mb-2 opacity-50"/>
+                                <p>Nenhum imóvel compatível encontrado com os critérios atuais.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Link Property Modal */}
+        {linkPropertyModalOpen && selectedClientForLink && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl p-6">
+                    <h3 className="text-lg font-bold mb-4">Vincular Imóvel</h3>
+                    <Input 
+                        placeholder="Buscar por código ou título..." 
+                        value={linkSearchCode}
+                        onChange={handleLinkSearchChange}
+                        className="mb-4"
+                    />
+                    <div className="space-y-2 max-h-60 overflow-y-auto">
+                        {linkMatchingProperties.map(p => (
+                            <div key={p.id} className="flex justify-between items-center p-2 border rounded hover:bg-slate-50">
+                                <div>
+                                    <p className="text-sm font-bold">{p.code}</p>
+                                    <p className="text-xs text-slate-500 truncate w-48">{p.title}</p>
+                                </div>
+                                <Button 
+                                    variant={selectedClientForLink.interestedPropertyIds?.includes(p.id) ? 'danger' : 'primary'}
+                                    onClick={() => toggleLinkedProperty(p.id)}
+                                    className="text-xs h-8"
+                                >
+                                    {selectedClientForLink.interestedPropertyIds?.includes(p.id) ? 'Remover' : 'Adicionar'}
+                                </Button>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-4 flex justify-end">
+                        <Button variant="outline" onClick={() => setLinkPropertyModalOpen(false)}>Concluir</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Quick Visit Modal */}
+        {quickVisitModalOpen && selectedClientForVisit && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <h3 className="text-lg font-bold mb-4">Agendar Visita Rápida</h3>
+                    <div className="space-y-4">
+                        <Input 
+                            label="Data e Hora" 
+                            type="datetime-local" 
+                            value={newVisitDate}
+                            onChange={e => setNewVisitDate(e.target.value)}
+                        />
+                        <div className="relative">
+                             <label className="text-sm font-medium text-slate-700 block mb-1">Imóvel</label>
+                             <input 
+                                 type="text" 
+                                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm"
+                                 placeholder="Buscar código..."
+                                 value={newVisitPropertyCode}
+                                 onChange={handlePropertySearchChange}
+                             />
+                             {matchingProperties.length > 0 && (
+                                 <div className="absolute z-10 w-full bg-white border border-slate-200 rounded shadow-lg mt-1 max-h-40 overflow-y-auto">
+                                     {matchingProperties.map(p => (
+                                         <button key={p.id} onClick={() => handlePropertySelect(p)} className="w-full text-left p-2 hover:bg-slate-50 text-sm border-b">
+                                             {p.code} - {p.title}
+                                         </button>
+                                     ))}
+                                 </div>
+                             )}
+                        </div>
+                        <Input 
+                            label="Notas" 
+                            value={newVisitNotes} 
+                            onChange={e => setNewVisitNotes(e.target.value)}
+                        />
+                    </div>
+                    <div className="mt-6 flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setQuickVisitModalOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleScheduleVisit}>Agendar</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Insights Lead Modal */}
+        {leadInsightsModalOpen && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl p-6 max-h-[80vh] overflow-y-auto">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xl font-bold flex items-center gap-2">
+                            <Sparkles className="text-amber-500"/> Insights Comerciais
+                        </h3>
+                        <button onClick={() => setLeadInsightsModalOpen(false)}><X/></button>
+                    </div>
+                    {loadingLeadInsights ? (
+                        <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={32}/></div>
+                    ) : (
+                        <div className="prose prose-sm max-w-none text-slate-600" dangerouslySetInnerHTML={{ __html: currentLeadInsights }} />
+                    )}
+                </div>
+            </div>
+        )}
+
+        {/* Global Pipeline Insights Modal */}
+        {insightsOpen && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl p-6 max-h-[80vh] overflow-y-auto">
+                    <div className="flex justify-between items-center mb-4">
+                        <h3 className="text-xl font-bold flex items-center gap-2">
+                            <Sparkles className="text-purple-500"/> Análise do Pipeline
+                        </h3>
+                        <button onClick={() => setInsightsOpen(false)}><X/></button>
+                    </div>
+                    {loadingInsights ? (
+                        <div className="py-12 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={32}/></div>
+                    ) : (
+                        <div className="prose prose-sm max-w-none text-slate-600" dangerouslySetInnerHTML={{ __html: insights }} />
+                    )}
+                </div>
+            </div>
+        )}
+
+        {/* Lost Modal */}
+        {lostModalOpen && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl p-6">
+                    <h3 className="text-lg font-bold text-red-600 mb-4">Motivo da Perda</h3>
+                    <p className="text-sm text-slate-600 mb-4">Por que este lead foi perdido? Essa informação é importante para estatísticas.</p>
+                    <textarea 
+                        className="w-full border p-2 rounded mb-4"
+                        placeholder="Ex: Comprou com concorrente, desistiu..."
+                        value={lostReason}
+                        onChange={e => setLostReason(e.target.value)}
+                    />
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setLostModalOpen(false)}>Cancelar</Button>
+                        <Button variant="danger" onClick={confirmMarkAsLost}>Confirmar Perda</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Complete Visit Modal */}
+        {completingVisit && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <h3 className="text-lg font-bold mb-4">Concluir Visita</h3>
+                    <div className="space-y-4">
+                        <div className="flex gap-4">
+                            <button 
+                                onClick={() => setVisitFeedback({...visitFeedback, liked: true})}
+                                className={`flex-1 p-3 rounded-lg border flex items-center justify-center gap-2 ${visitFeedback.liked ? 'bg-green-50 border-green-500 text-green-700' : 'border-slate-200'}`}
+                            >
+                                <ThumbsUp/> Gostou
+                            </button>
+                            <button 
+                                onClick={() => setVisitFeedback({...visitFeedback, liked: false})}
+                                className={`flex-1 p-3 rounded-lg border flex items-center justify-center gap-2 ${!visitFeedback.liked ? 'bg-red-50 border-red-500 text-red-700' : 'border-slate-200'}`}
+                            >
+                                <ThumbsDown/> Não Gostou
+                            </button>
+                        </div>
+                        <Input label="Feedback Geral" value={visitFeedback.feedback} onChange={e => setVisitFeedback({...visitFeedback, feedback: e.target.value})} />
+                        {visitFeedback.liked ? (
+                            <Input label="Pontos Positivos" value={visitFeedback.positive} onChange={e => setVisitFeedback({...visitFeedback, positive: e.target.value})} />
+                        ) : (
+                            <Input label="Pontos Negativos" value={visitFeedback.negative} onChange={e => setVisitFeedback({...visitFeedback, negative: e.target.value})} />
+                        )}
+                    </div>
+                    <div className="mt-6 flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setCompletingVisit(null)}>Cancelar</Button>
+                        <Button onClick={handleConfirmCompleteVisit}>Salvar Feedback</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+
+        {/* Reschedule Visit Modal */}
+        {reschedulingVisit && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <h3 className="text-lg font-bold mb-4">Reagendar Visita</h3>
+                    <div className="space-y-4">
+                        <Input 
+                            label="Nova Data e Hora" 
+                            type="datetime-local" 
+                            value={rescheduleData.date}
+                            onChange={e => setRescheduleData({...rescheduleData, date: e.target.value})}
+                        />
+                        <Input 
+                            label="Notas" 
+                            value={rescheduleData.notes}
+                            onChange={e => setRescheduleData({...rescheduleData, notes: e.target.value})}
+                        />
+                    </div>
+                    <div className="mt-6 flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setReschedulingVisit(null)}>Cancelar</Button>
+                        <Button onClick={handleConfirmReschedule}>Confirmar</Button>
+                    </div>
+                </div>
+            </div>
+        )}
+        
         {viewProperty && (
             <PropertyDetailModal
                 property={viewProperty}
@@ -1143,8 +1364,6 @@ export const CRMPage: React.FC = () => {
                 isStaff={isStaff}
             />
         )}
-        
-        {/* ... */}
     </div>
   );
 };
