@@ -34,8 +34,10 @@ export const getSupabase = (url: string, key: string) => {
         },
         realtime: {
             params: {
-                eventsPerSecond: 10, // Reduced slightly to prevent flooding if connection is weak
+                eventsPerSecond: 20,
             },
+            // Critical for keeping connection alive in some network conditions
+            heartbeatIntervalMs: 15000, 
         },
     });
     
@@ -111,35 +113,39 @@ export const fetchEntitiesFromSupabase = async (table: string, url: string, key:
 export const unsubscribeAll = async () => {
     const promises: Promise<any>[] = [];
     activeChannels.forEach((channel) => {
-        promises.push(channel.unsubscribe());
+        if(channel.state === 'joined' || channel.state === 'joining') {
+            promises.push(channel.unsubscribe());
+        }
     });
     await Promise.all(promises);
     activeChannels.clear();
-    console.log("[Realtime] Todos os canais desconectados.");
+    console.log("[Realtime] Canais desconectados (Cleanup).");
 };
 
 // GLOBAL DATABASE SUBSCRIPTION
 export const subscribeToDatabase = (
     url: string,
     key: string,
-    onEvent: (payload: any) => void,
-    retryCount = 0
+    onEvent: (payload: any) => void
 ): RealtimeChannel | null => {
     const supabase = getSupabase(url, key);
     if (!supabase) return null;
 
     const channelName = 'public-db-changes';
 
-    // Deduplication: Return existing if connected
+    // Strict Deduplication
     if (activeChannels.has(channelName)) {
         const existing = activeChannels.get(channelName);
-        if(existing && (existing.state === 'joined' || existing.state === 'joining')) {
+        if (existing && (existing.state === 'joined' || existing.state === 'joining')) {
+            console.log("[Realtime] Canal já ativo, reutilizando.");
             return existing;
         }
-        // If it's in a bad state, clean it up
-        supabase.removeChannel(existing!);
+        // If state is closed/errored, remove it to start fresh
+        try { existing?.unsubscribe(); } catch(e){}
         activeChannels.delete(channelName);
     }
+
+    console.log("[Realtime] Iniciando conexão com canal global...");
 
     const channel = supabase.channel(channelName)
         .on(
@@ -147,55 +153,31 @@ export const subscribeToDatabase = (
             { event: '*', schema: 'public' },
             (payload) => onEvent(payload)
         )
-        .subscribe((status) => {
+        .subscribe((status, err) => {
             if (status === 'SUBSCRIBED') {
-                console.log(`[Realtime] Monitorando alterações no banco de dados.`);
+                console.log(`[Realtime] Conectado e monitorando banco de dados.`);
             }
             
             if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                // Only log warning if it's the first few failures to avoid console spam
-                if (retryCount < 3) {
-                    console.warn(`[Realtime] Erro de conexão (${status}). Tentando reconectar...`);
-                }
+                console.warn(`[Realtime] Erro de conexão (${status}):`, err);
                 
-                // Cleanup current failing channel
+                // Cleanup bad channel
                 activeChannels.delete(channelName);
-                supabase.removeChannel(channel);
-
-                // Retry Logic with Backoff (Max 10 retries)
-                if (retryCount < 10) {
-                    const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // 1s, 2s, 4s, 8s, 10s...
-                    setTimeout(() => {
-                        subscribeToDatabase(url, key, onEvent, retryCount + 1);
-                    }, delay);
-                } else {
-                    console.error("[Realtime] Falha permanente na conexão. Verifique suas credenciais do Supabase.");
-                }
+                
+                // Auto-retry logic handled by client usually, but if channel dies completely:
+                // We can attempt a hard reconnect after delay
+                setTimeout(() => {
+                    console.log("[Realtime] Tentando reconexão automática...");
+                    subscribeToDatabase(url, key, onEvent);
+                }, 5000);
             }
             
             if (status === 'CLOSED') {
+                console.log(`[Realtime] Canal fechado.`);
                 activeChannels.delete(channelName);
             }
         });
 
     activeChannels.set(channelName, channel);
     return channel;
-};
-
-// Deprecated single table subscription (kept for compatibility if needed)
-export const subscribeToTable = (
-    table: string, 
-    url: string, 
-    key: string, 
-    onInsert: (payload: any) => void,
-    onUpdate: (payload: any) => void,
-    onDelete: (payload: any) => void
-): RealtimeChannel | null => {
-    return subscribeToDatabase(url, key, (payload) => {
-        if(payload.table === table) {
-            if(payload.eventType === 'INSERT') onInsert(payload.new);
-            if(payload.eventType === 'UPDATE') onUpdate(payload.new);
-            if(payload.eventType === 'DELETE') onDelete(payload.old);
-        }
-    });
 };

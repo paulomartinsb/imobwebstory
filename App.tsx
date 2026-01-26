@@ -36,18 +36,24 @@ const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
 };
 
 function App() {
-  const { currentUser, loadFromSupabase } = useStore();
+  const { loadFromSupabase, unsubscribeFromRealtime } = useStore();
 
-  // Load cloud data on mount
+  // Load cloud data on mount and handle cleanup
   useEffect(() => {
-      // The store handles Env fallback robustly inside loadFromSupabase.
-      // We rely on loadFromSupabase to trigger subscribeToRealtime internally after loading settings.
       loadFromSupabase();
-  }, []);
+
+      // Cleanup function to close websocket when App unmounts (or hot-reloads)
+      return () => {
+          unsubscribeFromRealtime();
+      };
+  }, []); // Empty dependency array ensures this runs once on mount
 
   // Helper to determine the "Home" page based on role
   const getHomePage = () => {
-      if (currentUser?.role === 'captator') return <Navigate to="/referrals" replace />;
+      // Use useStore.getState().currentUser here if needed for render logic inside routes
+      // but component logic handles it via store hook above.
+      const user = useStore.getState().currentUser;
+      if (user?.role === 'captator') return <Navigate to="/referrals" replace />;
       return <DashboardPage />;
   }
 
