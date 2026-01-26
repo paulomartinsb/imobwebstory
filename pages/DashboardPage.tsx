@@ -166,10 +166,14 @@ export const DashboardPage: React.FC = () => {
   const teamPerformanceData = useMemo(() => {
       if (!isAdmin) return [];
 
-      const start = new Date(perfStartDate);
-      start.setHours(0, 0, 0, 0); // Local start of day
-      const end = new Date(perfEndDate);
-      end.setHours(23, 59, 59, 999); // Local end of day
+      // FIX: Explicitly parse YYYY-MM-DD to avoid UTC conversion issues in some browsers/locales
+      // We want 00:00:00 Local Time for Start and 23:59:59 Local Time for End
+      const [startYear, startMonth, startDay] = perfStartDate.split('-').map(Number);
+      // Note: Month is 0-indexed in Date constructor
+      const start = new Date(startYear, startMonth - 1, startDay, 0, 0, 0, 0);
+
+      const [endYear, endMonth, endDay] = perfEndDate.split('-').map(Number);
+      const end = new Date(endYear, endMonth - 1, endDay, 23, 59, 59, 999);
 
       // Get Settings (or defaults if missing)
       const config = systemSettings.teamPerformance || {

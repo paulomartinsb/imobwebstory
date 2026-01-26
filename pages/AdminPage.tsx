@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT, DEFAULT_PROPERTY_TYPES, DEFAULT_FEATURES, DEFAULT_LEAD_SOURCES, DEFAULT_LOCATIONS } from '../store';
+import { DEFAULT_EMAIL_TEMPLATES } from '../services/emailService';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail, Send, FileEdit } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
-import { UserRole, LogEntry, User, SmtpConfig } from '../types';
+import { UserRole, LogEntry, User, SmtpConfig, EmailTemplatesConfig } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
 
 const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }) => {
@@ -100,7 +101,7 @@ const StringListManager: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-  const { currentUser, users, updateUserRole, updateUser, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification, loadFromSupabase } = useStore();
+  const { currentUser, users, updateUserRole, updateUser, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification, loadFromSupabase, sendTestEmail } = useStore();
   const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs' | 'database'>('users');
   
   // Local state for settings form
@@ -120,6 +121,10 @@ export const AdminPage: React.FC = () => {
   // Sync State
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncLog, setSyncLog] = useState<string[]>([]);
+
+  // SMTP Test State
+  const [testEmail, setTestEmail] = useState(currentUser?.email || '');
+  const [isTestingSmtp, setIsTestingSmtp] = useState(false);
 
   // Property Config States
   const [newTypeLabel, setNewTypeLabel] = useState('');
@@ -154,13 +159,22 @@ export const AdminPage: React.FC = () => {
       inactiveLabel: 'Sem Produção - Cobrar'
   });
 
+  // Email Templates State
+  const [activeTemplate, setActiveTemplate] = useState<'propertyApproved' | 'propertyRejected' | 'leadAssigned'>('propertyApproved');
+  const [templates, setTemplates] = useState<EmailTemplatesConfig>(systemSettings.emailTemplates || DEFAULT_EMAIL_TEMPLATES);
+
   // Security Check
   if (currentUser?.role !== 'admin') {
       return <Navigate to="/" replace />;
   }
 
   const handleSettingsSave = () => {
-      updateSystemSettings(settingsForm);
+      // Merge all local states into one update
+      const newSettings = {
+          ...settingsForm,
+          emailTemplates: templates
+      };
+      updateSystemSettings(newSettings);
   };
   
   const handlePromptSave = () => {
@@ -195,6 +209,19 @@ export const AdminPage: React.FC = () => {
       };
       setSettingsForm({ ...settingsForm, smtpConfig: { ...current, ...updates } });
   };
+
+  const handleTestSmtp = async () => {
+      if(!settingsForm.smtpConfig?.host || !settingsForm.smtpConfig?.user || !settingsForm.smtpConfig?.pass) {
+          addNotification('error', 'Preencha as configurações de SMTP antes de testar.');
+          return;
+      }
+      setIsTestingSmtp(true);
+      const success = await sendTestEmail(testEmail, settingsForm.smtpConfig);
+      setIsTestingSmtp(false);
+      
+      if(success) addNotification('success', 'Email de teste enviado com sucesso!');
+      else addNotification('error', 'Falha ao enviar email. Verifique o console.');
+  }
 
   const handleAddUser = () => {
       if(!newUser.name || !newUser.email) {
@@ -384,6 +411,15 @@ export const AdminPage: React.FC = () => {
           case 'restore': return <Badge color="yellow">Restauração</Badge>;
           case 'approval': return <Badge color="green">Aprovação</Badge>;
           default: return <Badge color="gray">{action}</Badge>;
+      }
+  }
+
+  const getTemplateVars = (type: string) => {
+      switch(type) {
+          case 'propertyApproved': return ['{{ownerName}}', '{{propertyTitle}}', '{{propertyCode}}'];
+          case 'propertyRejected': return ['{{ownerName}}', '{{propertyTitle}}', '{{propertyCode}}', '{{reason}}'];
+          case 'leadAssigned': return ['{{ownerName}}', '{{clientName}}', '{{clientPhone}}'];
+          default: return [];
       }
   }
 
@@ -660,9 +696,70 @@ export const AdminPage: React.FC = () => {
                                 value={settingsForm.smtpConfig?.fromName || ''}
                                 onChange={e => updateSmtp({ fromName: e.target.value })}
                           />
+                          
+                          {/* Test Email Section */}
+                          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-end gap-2 mt-2">
+                              <div className="flex-1">
+                                  <label className="text-xs font-medium text-slate-500 block mb-1">Testar Conexão</label>
+                                  <input 
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
+                                    placeholder="email@teste.com"
+                                    value={testEmail}
+                                    onChange={e => setTestEmail(e.target.value)}
+                                  />
+                              </div>
+                              <Button variant="secondary" onClick={handleTestSmtp} disabled={isTestingSmtp}>
+                                  {isTestingSmtp ? 'Enviando...' : 'Enviar Teste'}
+                              </Button>
+                          </div>
+
                           <p className="text-xs text-slate-500 mt-1">
                               <strong>Nota para Gmail:</strong> Você deve usar uma "Senha de App" (App Password) gerada nas configurações de segurança da sua conta Google, e não sua senha normal.
                           </p>
+                      </div>
+                  </Card>
+
+                  {/* Email Templates Editor */}
+                  <Card className="p-6 border-l-4 border-l-teal-500">
+                      <div className="flex items-center justify-between mb-4">
+                          <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                              <FileEdit size={20} className="text-teal-600" /> Modelos de E-mail
+                          </h3>
+                      </div>
+                      <div className="flex gap-2 mb-4 border-b border-slate-200 overflow-x-auto">
+                          <button 
+                            onClick={() => setActiveTemplate('propertyApproved')}
+                            className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTemplate === 'propertyApproved' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                              Aprovação
+                          </button>
+                          <button 
+                            onClick={() => setActiveTemplate('propertyRejected')}
+                            className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTemplate === 'propertyRejected' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                              Reprovação
+                          </button>
+                          <button 
+                            onClick={() => setActiveTemplate('leadAssigned')}
+                            className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTemplate === 'leadAssigned' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                          >
+                              Novo Lead
+                          </button>
+                      </div>
+                      
+                      <div className="space-y-2">
+                          <div className="flex flex-wrap gap-2 mb-2">
+                              <span className="text-xs font-semibold text-slate-500">Variáveis disponíveis:</span>
+                              {getTemplateVars(activeTemplate).map(v => (
+                                  <code key={v} className="bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-600">{v}</code>
+                              ))}
+                          </div>
+                          <textarea 
+                              className="w-full h-48 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-mono text-sm leading-relaxed text-slate-700"
+                              value={templates[activeTemplate]}
+                              onChange={(e) => setTemplates({...templates, [activeTemplate]: e.target.value})}
+                              spellCheck={false}
+                          />
                       </div>
                   </Card>
 

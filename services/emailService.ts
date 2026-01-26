@@ -31,46 +31,42 @@ export const sendSystemEmail = async (options: EmailOptions, config?: SmtpConfig
     console.groupEnd();
 
     // Simulate network delay
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await new Promise(resolve => setTimeout(resolve, 800));
 
     return true;
 };
 
-// Templates Helper
-export const emailTemplates = {
-    propertyRejected: (ownerName: string, propertyTitle: string, propertyCode: string, reason: string) => `
-        Olá, ${ownerName}.
-        
-        O imóvel "${propertyTitle}" (Código: ${propertyCode}) precisa de ajustes antes de ser publicado.
-        
-        Motivo apontado pela revisão:
-        "${reason}"
-        
-        Por favor, acesse o sistema, realize as correções necessárias e envie para aprovação novamente.
-        
-        Atenciosamente,
-        Equipe.
-    `,
-    propertyApproved: (ownerName: string, propertyTitle: string, propertyCode: string) => `
-        Parabéns, ${ownerName}!
-        
-        O seu imóvel "${propertyTitle}" (Código: ${propertyCode}) foi aprovado e já está visível em nossa vitrine de imóveis.
-        
-        Sucesso nas vendas!
-        Atenciosamente,
-        Equipe.
-    `,
-    leadAssigned: (ownerName: string, clientName: string, clientPhone: string) => `
-        Olá, ${ownerName}.
-        
-        Você recebeu um novo lead em sua carteira!
-        
-        Nome: ${clientName}
-        Telefone: ${clientPhone}
-        
-        Acesse o CRM agora mesmo para iniciar o atendimento.
-        
-        Atenciosamente,
-        Administração.
-    `
+// Default Templates (Strings with {{placeholders}})
+export const DEFAULT_EMAIL_TEMPLATES = {
+    propertyRejected: `Olá, {{ownerName}}.
+
+O imóvel "{{propertyTitle}}" (Código: {{propertyCode}}) precisa de ajustes antes de ser publicado.
+
+Motivo apontado pela revisão:
+"{{reason}}"
+
+Por favor, acesse o sistema, realize as correções necessárias e envie para aprovação novamente.
+
+Atenciosamente,
+Equipe.`,
+
+    propertyApproved: `Parabéns, {{ownerName}}!
+
+O seu imóvel "{{propertyTitle}}" (Código: {{propertyCode}}) foi aprovado e já está visível em nossa vitrine de imóveis.
+
+Sucesso nas vendas!
+Atenciosamente,
+Equipe.`,
+
+    leadAssigned: `Olá, {{ownerName}}.
+
+Você recebeu um novo lead em sua carteira!
+
+Nome: {{clientName}}
+Telefone: {{clientPhone}}
+
+Acesse o CRM agora mesmo para iniciar o atendimento.
+
+Atenciosamente,
+Administração.`
 };

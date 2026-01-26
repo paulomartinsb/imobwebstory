@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit } from './types';
+import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit, SmtpConfig } from './types';
 import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable } from './services/supabaseClient';
-import { sendSystemEmail, emailTemplates } from './services/emailService';
+import { sendSystemEmail, DEFAULT_EMAIL_TEMPLATES } from './services/emailService';
 
 export interface Notification {
   id: string;
@@ -62,6 +62,7 @@ interface AppState {
   // System Actions
   addNotification: (type: 'success' | 'error' | 'info', message: string) => void;
   removeNotification: (id: string) => void;
+  sendTestEmail: (email: string, config: SmtpConfig) => Promise<boolean>;
 
   // Audit Actions
   restoreState: (logId: string) => void;
@@ -243,6 +244,15 @@ const createLog = (
     newData: newData ? JSON.parse(JSON.stringify(newData)) : undefined // Deep copy
 });
 
+// Helper to replace template vars
+const processEmailTemplate = (template: string, vars: Record<string, string>) => {
+    let result = template;
+    for (const [key, value] of Object.entries(vars)) {
+        result = result.split(`{{${key}}}`).join(value);
+    }
+    return result;
+}
+
 // Helper to calculate next visit
 const calculateNextVisit = (visits: Visit[]): string | undefined => {
     const now = new Date();
@@ -335,7 +345,9 @@ export const useStore = create<AppState>()(
               secure: false,
               fromName: 'Sistema WebImob',
               enabled: false
-          }
+          },
+          // Default Templates
+          emailTemplates: DEFAULT_EMAIL_TEMPLATES
       },
       pipelines: [DEFAULT_PIPELINE],
       logs: [], 
@@ -370,7 +382,8 @@ export const useStore = create<AppState>()(
                       geminiApiKey: cloudSettings.geminiApiKey || state.systemSettings.geminiApiKey || getEnv('VITE_GEMINI_API_KEY') || '',
                       // Ensure new fields exist if coming from older DB version
                       teamPerformance: cloudSettings.teamPerformance || state.systemSettings.teamPerformance,
-                      smtpConfig: cloudSettings.smtpConfig || state.systemSettings.smtpConfig
+                      smtpConfig: cloudSettings.smtpConfig || state.systemSettings.smtpConfig,
+                      emailTemplates: cloudSettings.emailTemplates || state.systemSettings.emailTemplates || DEFAULT_EMAIL_TEMPLATES
                   };
                   set({ systemSettings: mergedSettings });
                   console.log("Configurações Globais carregadas do Supabase.");
@@ -452,7 +465,8 @@ export const useStore = create<AppState>()(
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
                               supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey,
                               teamPerformance: data.teamPerformance || current.systemSettings.teamPerformance,
-                              smtpConfig: data.smtpConfig || current.systemSettings.smtpConfig
+                              smtpConfig: data.smtpConfig || current.systemSettings.smtpConfig,
+                              emailTemplates: data.emailTemplates || current.systemSettings.emailTemplates || DEFAULT_EMAIL_TEMPLATES
                           };
                           // @ts-ignore
                           delete updates.systemSettings.id;
@@ -744,7 +758,13 @@ export const useStore = create<AppState>()(
           // SEND EMAIL TO OWNER
           const owner = state.users.find(u => u.id === oldProperty.authorId);
           if (owner) {
-              const body = emailTemplates.propertyApproved(owner.name, oldProperty.title, oldProperty.code);
+              const template = state.systemSettings.emailTemplates?.propertyApproved || DEFAULT_EMAIL_TEMPLATES.propertyApproved;
+              const body = processEmailTemplate(template, {
+                  ownerName: owner.name,
+                  propertyTitle: oldProperty.title,
+                  propertyCode: oldProperty.code
+              });
+
               sendSystemEmail({
                   to: owner.email,
                   subject: `Sucesso: Imóvel Publicado - ${state.systemSettings.companyName}`,
@@ -781,7 +801,14 @@ export const useStore = create<AppState>()(
           // SEND EMAIL TO OWNER
           const owner = state.users.find(u => u.id === oldProperty.authorId);
           if (owner) {
-              const body = emailTemplates.propertyRejected(owner.name, oldProperty.title, oldProperty.code, reason);
+              const template = state.systemSettings.emailTemplates?.propertyRejected || DEFAULT_EMAIL_TEMPLATES.propertyRejected;
+              const body = processEmailTemplate(template, {
+                  ownerName: owner.name,
+                  propertyTitle: oldProperty.title,
+                  propertyCode: oldProperty.code,
+                  reason: reason
+              });
+
               sendSystemEmail({
                   to: owner.email,
                   subject: `Atenção: Ajustes Necessários - ${state.systemSettings.companyName}`,
@@ -888,7 +915,13 @@ export const useStore = create<AppState>()(
             if (specificOwnerId && specificOwnerId !== state.currentUser?.id) {
                 const targetBroker = state.users.find(u => u.id === specificOwnerId);
                 if (targetBroker) {
-                    const body = emailTemplates.leadAssigned(targetBroker.name, newClient.name, newClient.phone);
+                    const template = state.systemSettings.emailTemplates?.leadAssigned || DEFAULT_EMAIL_TEMPLATES.leadAssigned;
+                    const body = processEmailTemplate(template, {
+                        ownerName: targetBroker.name,
+                        clientName: newClient.name,
+                        clientPhone: newClient.phone
+                    });
+
                     sendSystemEmail({
                         to: targetBroker.email,
                         subject: `Novo Lead: ${newClient.name} foi adicionado à sua carteira.`,
@@ -1062,6 +1095,15 @@ export const useStore = create<AppState>()(
       
       addNotification: (type, message) => set((state) => ({ notifications: [...state.notifications, { id: Math.random().toString(), type, message }] })),
       removeNotification: (id) => set((state) => ({ notifications: state.notifications.filter(n => n.id !== id) })),
+
+      sendTestEmail: async (email, config) => {
+          const success = await sendSystemEmail({
+              to: email,
+              subject: 'Teste de Configuração SMTP - WebImob',
+              body: 'Olá.\n\nEste é um email de teste para confirmar que sua configuração SMTP está funcionando corretamente.\n\nAtenciosamente,\nWebImob'
+          }, config);
+          return success;
+      },
 
       restoreState: (logId) => set((state) => {
           const log = state.logs.find(l => l.id === logId);

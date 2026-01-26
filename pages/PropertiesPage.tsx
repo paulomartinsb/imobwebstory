@@ -45,8 +45,8 @@ export const PropertiesPage: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Permissions Check
-  const isBroker = currentUser?.role === 'broker';
-  const isStaff = !isBroker && !!currentUser; // Admin, Finance, Employee - Ensure boolean
+  const isBroker = currentUser?.role === 'broker' || currentUser?.role === 'captator';
+  const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
 
   // Form State for New/Edit Property
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -87,15 +87,21 @@ export const PropertiesPage: React.FC = () => {
 
   // --- Filter Logic ---
 
-  // 1. Base Filtering (Role based)
+  // 1. Base Filtering (Visibility Rules)
   const baseProperties = useMemo(() => {
+      if (!currentUser) return [];
+
       return properties.filter(p => {
-          if (isStaff) return true;
-          // Broker sees own properties OR published properties (but in "My Properties" view context, usually just theirs + published for reference)
-          if (isBroker) return p.authorId === currentUser?.id;
-          return true;
+          // Rule 1: Published/Approved properties are visible to ALL users
+          if (p.status === 'published') return true;
+
+          // Rule 2: Draft, Pending, Sold, etc. are visible ONLY to Admins/Staff and the Author
+          if (isStaff) return true; // Admins, Finance, Employee see everything
+          if (p.authorId === currentUser.id) return true; // Author sees their own
+
+          return false; // Hidden otherwise
       });
-  }, [properties, isStaff, isBroker, currentUser]);
+  }, [properties, isStaff, currentUser]);
 
   // 2. Count Calculation (Before Search/Tab filters)
   const counts = useMemo(() => {

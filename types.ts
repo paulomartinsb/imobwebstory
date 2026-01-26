@@ -47,6 +47,12 @@ export interface SmtpConfig {
     enabled: boolean;
 }
 
+export interface EmailTemplatesConfig {
+    propertyApproved: string;
+    propertyRejected: string;
+    leadAssigned: string;
+}
+
 export interface SystemSettings {
   allowNewRegistrations: boolean;
   requirePropertyApproval: boolean;
@@ -70,6 +76,7 @@ export interface SystemSettings {
   teamPerformance: TeamPerformanceConfig;
   
   smtpConfig?: SmtpConfig; // Configuração SMTP
+  emailTemplates?: EmailTemplatesConfig; // Templates de Email Editáveis
 }
 
 export interface Property {

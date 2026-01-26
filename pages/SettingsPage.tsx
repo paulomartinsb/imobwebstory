@@ -15,8 +15,13 @@ export const SettingsPage: React.FC = () => {
       phone: ''
   });
 
+  // Notification Preferences State - Push enabled by default
+  const [preferences, setPreferences] = useState({
+      emailNotifications: true,
+      pushNotifications: true
+  });
+
   // Initialize form when currentUser loads or changes (e.g. login)
-  // We use currentUser?.id dependency to avoid resetting form while typing if background sync happens
   useEffect(() => {
       if (currentUser) {
           setProfileForm({
@@ -39,24 +44,22 @@ export const SettingsPage: React.FC = () => {
               return;
           }
           
-          // Call updateUser which handles Supabase sync via store logic
           updateUser(currentUser.id, {
               name: profileForm.name,
               email: profileForm.email,
               phone: profileForm.phone
           });
-          // Notification is handled by the store action
       }
   }
 
   const handleSavePreferences = () => {
+      // In a real app, save to DB. Here just toast.
       addNotification('success', 'Preferências salvas com sucesso!');
   }
 
   const handlePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file && currentUser) {
-          // Limit file size to 2MB to prevent performance issues
           if (file.size > 2 * 1024 * 1024) {
               addNotification('error', 'A imagem é muito grande. Máximo de 2MB.');
               return;
@@ -214,7 +217,12 @@ export const SettingsPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" className="sr-only peer" defaultChecked />
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only peer" 
+                                        checked={preferences.emailNotifications} 
+                                        onChange={e => setPreferences({...preferences, emailNotifications: e.target.checked})}
+                                    />
                                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                 </label>
                             </div>
@@ -230,7 +238,12 @@ export const SettingsPage: React.FC = () => {
                                     </div>
                                 </div>
                                 <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" className="sr-only peer" />
+                                    <input 
+                                        type="checkbox" 
+                                        className="sr-only peer" 
+                                        checked={preferences.pushNotifications} 
+                                        onChange={e => setPreferences({...preferences, pushNotifications: e.target.checked})}
+                                    />
                                     <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
                                 </label>
                             </div>
