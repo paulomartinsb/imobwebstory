@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineStageConfig, LogEntry, PropertyStatus, Visit, SmtpConfig } from './types';
-import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable, unsubscribeAll } from './services/supabaseClient';
+import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToDatabase, unsubscribeAll } from './services/supabaseClient';
 import { sendSystemEmail, DEFAULT_EMAIL_TEMPLATES } from './services/emailService';
 
 // ... (Interface declarations remain unchanged) ...
@@ -360,7 +360,6 @@ export const useStore = create<AppState>()(
       clients: [], // Empty for Production
       notifications: [],
 
-      // ... (loadFromSupabase unchanged) ...
       loadFromSupabase: async () => {
           const state = get();
           const envUrl = getEnv('VITE_SUPABASE_URL');
@@ -415,6 +414,9 @@ export const useStore = create<AppState>()(
               set(updates);
               console.log("Dados Operacionais sincronizados do Supabase.");
           }
+
+          // Trigger subscription immediately after load to ensure credentials are fresh
+          get().subscribeToRealtime();
       },
 
       unsubscribeFromRealtime: () => {
@@ -425,22 +427,41 @@ export const useStore = create<AppState>()(
           const state = get();
           const envUrl = getEnv('VITE_SUPABASE_URL');
           const envKey = getEnv('VITE_SUPABASE_ANON_KEY');
-          const supabaseUrl = envUrl || state.systemSettings.supabaseUrl || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
-          const supabaseAnonKey = envKey || state.systemSettings.supabaseAnonKey || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
+          const supabaseUrl = state.systemSettings.supabaseUrl || envUrl || 'https://sqbipjfbevtmcvmgvpbj.supabase.co';
+          const supabaseAnonKey = state.systemSettings.supabaseAnonKey || envKey || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN';
 
           if (!supabaseUrl || !supabaseAnonKey) return;
 
-          const handleUpdate = (table: string, payload: any, type: 'INSERT' | 'UPDATE' | 'DELETE') => {
-              // Safe Payload Extraction
-              const id = payload.id || (payload.content && payload.content.id);
-              let data = payload.content;
+          // Allowed tables to sync
+          const allowedTables = ['properties', 'clients', 'users', 'pipelines', 'system_settings', 'logs'];
 
-              // Ensure data is parsed if it comes as string (Supabase quirk depending on JSON/JSONB)
+          subscribeToDatabase(supabaseUrl, supabaseAnonKey, (payload) => {
+              const { table, eventType, new: newRecord, old: oldRecord } = payload;
+              
+              if (!allowedTables.includes(table)) return;
+
+              // Determine record to process
+              // For DELETE, use old record (has ID). For INSERT/UPDATE, use new record.
+              const record = eventType === 'DELETE' ? oldRecord : newRecord;
+              if (!record) return;
+
+              // Extract ID and Content
+              // Our architecture uses a 'content' JSON column for most tables. 
+              // If not present, we assume standard columns.
+              const id = record.id || (record.content && record.content.id);
+              let data = record.content; 
+
+              // Supabase sometimes sends JSON columns as strings
               if (typeof data === 'string') {
-                  try { data = JSON.parse(data); } catch(e) { console.error('Failed to parse realtime payload', e); return; }
+                  try { data = JSON.parse(data); } catch(e) { console.error('Realtime parse error', e); return; }
               }
 
-              if(!id) return; 
+              // Fallback: If no 'content' column found and it's not a DELETE, use the full record
+              if (!data && eventType !== 'DELETE') {
+                  data = record;
+              }
+
+              if(!id) return;
 
               set((current) => {
                   const updates: any = {};
@@ -452,11 +473,10 @@ export const useStore = create<AppState>()(
                           updates.systemSettings = { 
                               ...current.systemSettings, 
                               ...data,
+                              // Preserve credentials if incoming data is empty/partial
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
                               supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey,
                           };
-                          // @ts-ignore
-                          delete updates.systemSettings.id;
                       }
                       return updates;
                   }
@@ -465,13 +485,13 @@ export const useStore = create<AppState>()(
                   if (current[stateKey] && Array.isArray(current[stateKey])) {
                       const currentList = current[stateKey] as any[];
                       
-                      if (type === 'DELETE') {
+                      if (eventType === 'DELETE') {
                           updates[stateKey] = currentList.filter(item => item.id !== id);
                       } else if (data) {
                           // INSERT or UPDATE
                           const exists = currentList.find(item => item.id === id);
                           if (exists) {
-                              // Force new array reference to trigger React re-render
+                              // Map creates a new array reference, triggering React re-render
                               updates[stateKey] = currentList.map(item => item.id === id ? data : item);
                           } else {
                               updates[stateKey] = [...currentList, data];
@@ -481,20 +501,10 @@ export const useStore = create<AppState>()(
 
                   return updates;
               });
-          };
-
-          const tables = ['properties', 'clients', 'users', 'pipelines', 'system_settings', 'logs'];
-          
-          tables.forEach(table => {
-              subscribeToTable(table, supabaseUrl, supabaseAnonKey, 
-                  (p) => handleUpdate(table, p, 'INSERT'),
-                  (p) => handleUpdate(table, p, 'UPDATE'),
-                  (p) => handleUpdate(table, p, 'DELETE')
-              );
           });
       },
 
-      // ... (Auth Actions, Data Actions, etc. unchanged) ...
+      // ... (Rest of actions unchanged) ...
       // --- Auth Actions Updated ---
       setCurrentUser: (userId) => {
           const user = get().users.find(u => u.id === userId);
@@ -520,8 +530,7 @@ export const useStore = create<AppState>()(
               }
               set({ currentUser: user });
               get().addNotification('success', `Bem-vindo de volta, ${user.name.split(' ')[0]}!`);
-              get().loadFromSupabase();
-              get().subscribeToRealtime();
+              get().loadFromSupabase(); // Will trigger subscription
               return true;
           }
           return false;
@@ -529,6 +538,7 @@ export const useStore = create<AppState>()(
 
       logout: () => {
           set({ currentUser: null });
+          get().unsubscribeFromRealtime();
           get().addNotification('info', 'Você saiu do sistema.');
       },
 

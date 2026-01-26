@@ -36,14 +36,13 @@ const PublicRoute = ({ children }: { children?: React.ReactNode }) => {
 };
 
 function App() {
-  const { currentUser, loadFromSupabase, subscribeToRealtime } = useStore();
+  const { currentUser, loadFromSupabase } = useStore();
 
   // Load cloud data on mount
   useEffect(() => {
-      // The store now handles Env fallback robustly inside loadFromSupabase
-      // We don't need complex checks here anymore.
+      // The store handles Env fallback robustly inside loadFromSupabase.
+      // We rely on loadFromSupabase to trigger subscribeToRealtime internally after loading settings.
       loadFromSupabase();
-      subscribeToRealtime();
   }, []);
 
   // Helper to determine the "Home" page based on role

@@ -34,7 +34,7 @@ export const getSupabase = (url: string, key: string) => {
         },
         realtime: {
             params: {
-                eventsPerSecond: 20, // Increased for better drag responsiveness
+                eventsPerSecond: 10, // Reduced slightly to prevent flooding if connection is weak
             },
         },
     });
@@ -118,7 +118,71 @@ export const unsubscribeAll = async () => {
     console.log("[Realtime] Todos os canais desconectados.");
 };
 
-// Realtime Subscription Helper
+// GLOBAL DATABASE SUBSCRIPTION
+export const subscribeToDatabase = (
+    url: string,
+    key: string,
+    onEvent: (payload: any) => void,
+    retryCount = 0
+): RealtimeChannel | null => {
+    const supabase = getSupabase(url, key);
+    if (!supabase) return null;
+
+    const channelName = 'public-db-changes';
+
+    // Deduplication: Return existing if connected
+    if (activeChannels.has(channelName)) {
+        const existing = activeChannels.get(channelName);
+        if(existing && (existing.state === 'joined' || existing.state === 'joining')) {
+            return existing;
+        }
+        // If it's in a bad state, clean it up
+        supabase.removeChannel(existing!);
+        activeChannels.delete(channelName);
+    }
+
+    const channel = supabase.channel(channelName)
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public' },
+            (payload) => onEvent(payload)
+        )
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log(`[Realtime] Monitorando alterações no banco de dados.`);
+            }
+            
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                // Only log warning if it's the first few failures to avoid console spam
+                if (retryCount < 3) {
+                    console.warn(`[Realtime] Erro de conexão (${status}). Tentando reconectar...`);
+                }
+                
+                // Cleanup current failing channel
+                activeChannels.delete(channelName);
+                supabase.removeChannel(channel);
+
+                // Retry Logic with Backoff (Max 10 retries)
+                if (retryCount < 10) {
+                    const delay = Math.min(1000 * Math.pow(2, retryCount), 10000); // 1s, 2s, 4s, 8s, 10s...
+                    setTimeout(() => {
+                        subscribeToDatabase(url, key, onEvent, retryCount + 1);
+                    }, delay);
+                } else {
+                    console.error("[Realtime] Falha permanente na conexão. Verifique suas credenciais do Supabase.");
+                }
+            }
+            
+            if (status === 'CLOSED') {
+                activeChannels.delete(channelName);
+            }
+        });
+
+    activeChannels.set(channelName, channel);
+    return channel;
+};
+
+// Deprecated single table subscription (kept for compatibility if needed)
 export const subscribeToTable = (
     table: string, 
     url: string, 
@@ -127,39 +191,11 @@ export const subscribeToTable = (
     onUpdate: (payload: any) => void,
     onDelete: (payload: any) => void
 ): RealtimeChannel | null => {
-    const supabase = getSupabase(url, key);
-    if (!supabase) return null;
-
-    const channelName = `public:${table}`;
-
-    // Deduplication: If channel exists and is joined, don't recreate
-    if (activeChannels.has(channelName)) {
-        const existing = activeChannels.get(channelName);
-        if(existing && (existing.state === 'joined' || existing.state === 'joining')) {
-            return existing;
+    return subscribeToDatabase(url, key, (payload) => {
+        if(payload.table === table) {
+            if(payload.eventType === 'INSERT') onInsert(payload.new);
+            if(payload.eventType === 'UPDATE') onUpdate(payload.new);
+            if(payload.eventType === 'DELETE') onDelete(payload.old);
         }
-        // If closed or errored, remove and recreate
-        activeChannels.delete(channelName);
-    }
-
-    const channel = supabase
-        .channel(channelName)
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: table }, (payload) => onInsert(payload.new))
-        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: table }, (payload) => onUpdate(payload.new))
-        .on('postgres_changes', { event: 'DELETE', schema: 'public', table: table }, (payload) => onDelete(payload.old))
-        .subscribe((status) => {
-            if (status === 'SUBSCRIBED') {
-                console.log(`[Realtime] Conectado a ${table}`);
-            }
-            if (status === 'CHANNEL_ERROR') {
-                console.error(`[Realtime] Erro no canal ${table}`);
-                activeChannels.delete(channelName);
-            }
-            if (status === 'CLOSED') {
-                activeChannels.delete(channelName);
-            }
-        });
-        
-    activeChannels.set(channelName, channel);
-    return channel;
+    });
 };
