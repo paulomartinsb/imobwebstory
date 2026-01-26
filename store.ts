@@ -4,6 +4,7 @@ import { Property, Client, User, UserRole, SystemSettings, Pipeline, PipelineSta
 import { fetchEntitiesFromSupabase, syncEntityToSupabase, deleteEntityFromSupabase, subscribeToTable } from './services/supabaseClient';
 import { sendSystemEmail, DEFAULT_EMAIL_TEMPLATES } from './services/emailService';
 
+// ... (Interface declarations remain unchanged) ...
 export interface Notification {
   id: string;
   type: 'success' | 'error' | 'info';
@@ -73,6 +74,7 @@ interface AppState {
   subscribeToRealtime: () => void;
 }
 
+// ... (DEFAULT_ADMIN, DEFAULT_PIPELINE, Constants, Helper functions remain unchanged) ...
 // Initial Admin User for Production
 const DEFAULT_ADMIN: User = {
   id: 'admin-master',
@@ -357,7 +359,7 @@ export const useStore = create<AppState>()(
       clients: [], // Empty for Production
       notifications: [],
 
-      // ... (Rest of actions logic kept as is) ...
+      // ... (loadFromSupabase unchanged) ...
       loadFromSupabase: async () => {
           const state = get();
           const envUrl = getEnv('VITE_SUPABASE_URL');
@@ -424,53 +426,47 @@ export const useStore = create<AppState>()(
           if (!supabaseUrl || !supabaseAnonKey) return;
 
           const handleUpdate = (table: string, payload: any, type: 'INSERT' | 'UPDATE' | 'DELETE') => {
+              // Extract ID: payload.id (DELETE) or payload.content.id (INSERT/UPDATE)
+              // Note: When Supabase triggers a DELETE, the payload usually contains the 'old' record with just the ID.
+              const id = payload.id || (payload.content && payload.content.id);
               const data = payload.content;
-              if(!data || !data.id) return;
+
+              if(!id) return; 
 
               set((current) => {
                   const updates: any = {};
-                  
-                  if (table === 'properties') {
-                      if (type === 'DELETE') updates.properties = current.properties.filter(p => p.id !== data.id);
-                      else {
-                          const exists = current.properties.find(p => p.id === data.id);
-                          if (exists) updates.properties = current.properties.map(p => p.id === data.id ? data : p);
-                          else updates.properties = [...current.properties, data];
-                      }
-                  } else if (table === 'clients') {
-                      if (type === 'DELETE') updates.clients = current.clients.filter(c => c.id !== data.id);
-                      else {
-                          const exists = current.clients.find(c => c.id === data.id);
-                          if (exists) updates.clients = current.clients.map(c => c.id === data.id ? data : c);
-                          else updates.clients = [...current.clients, data];
-                      }
-                  } else if (table === 'users') {
-                      if (type === 'DELETE') updates.users = current.users.filter(u => u.id !== data.id);
-                      else {
-                          const exists = current.users.find(u => u.id === data.id);
-                          if (exists) updates.users = current.users.map(u => u.id === data.id ? data : u);
-                          else updates.users = [...current.users, data];
-                      }
-                  } else if (table === 'pipelines') {
-                      if (type === 'DELETE') updates.pipelines = current.pipelines.filter(p => p.id !== data.id);
-                      else {
-                          const exists = current.pipelines.find(p => p.id === data.id);
-                          if (exists) updates.pipelines = current.pipelines.map(p => p.id === data.id ? data : p);
-                          else updates.pipelines = [...current.pipelines, data];
-                      }
-                  } else if (table === 'system_settings') {
-                      if (data.id === 'global-settings') {
+                  const stateKey = table as keyof AppState; // Assumes table names match state keys (properties, clients, etc.)
+
+                  // Special Case: System Settings
+                  if (table === 'system_settings') {
+                      if (id === 'global-settings' && data) {
                           updates.systemSettings = { 
                               ...current.systemSettings, 
                               ...data,
+                              // Preserve credentials if not present in payload to avoid lockout
                               supabaseUrl: data.supabaseUrl || current.systemSettings.supabaseUrl || supabaseUrl,
                               supabaseAnonKey: data.supabaseAnonKey || current.systemSettings.supabaseAnonKey || supabaseAnonKey,
-                              teamPerformance: data.teamPerformance || current.systemSettings.teamPerformance,
-                              smtpConfig: data.smtpConfig || current.systemSettings.smtpConfig,
-                              emailTemplates: data.emailTemplates || current.systemSettings.emailTemplates || DEFAULT_EMAIL_TEMPLATES
                           };
                           // @ts-ignore
                           delete updates.systemSettings.id;
+                      }
+                      return updates;
+                  }
+
+                  // Generic List Update (Properties, Clients, Users, Pipelines)
+                  if (current[stateKey] && Array.isArray(current[stateKey])) {
+                      const currentList = current[stateKey] as any[];
+                      
+                      if (type === 'DELETE') {
+                          updates[stateKey] = currentList.filter(item => item.id !== id);
+                      } else if (data) {
+                          // INSERT or UPDATE
+                          const exists = currentList.find(item => item.id === id);
+                          if (exists) {
+                              updates[stateKey] = currentList.map(item => item.id === id ? data : item);
+                          } else {
+                              updates[stateKey] = [...currentList, data];
+                          }
                       }
                   }
 
@@ -489,6 +485,7 @@ export const useStore = create<AppState>()(
           });
       },
 
+      // ... (Auth Actions, Data Actions, etc. unchanged) ...
       // --- Auth Actions Updated ---
       setCurrentUser: (userId) => {
           const user = get().users.find(u => u.id === userId);
@@ -622,7 +619,7 @@ export const useStore = create<AppState>()(
           };
       }),
 
-      // ... (Rest of actions unchanged) ...
+      // ... (Rest of actions logic is fine) ...
       updateSystemSettings: (newSettings) => set((state) => {
           const oldSettings = { ...state.systemSettings };
           const updatedSettings = { ...state.systemSettings, ...newSettings };
@@ -1045,14 +1042,39 @@ export const useStore = create<AppState>()(
           const client = state.clients.find(c => c.id === clientId);
           if (!client) return state;
 
+          const oldVisit = client.visits.find(v => v.id === visitId);
           const updatedVisits = client.visits.map(v => v.id === visitId ? { ...v, ...updates } : v);
+          const newVisit = updatedVisits.find(v => v.id === visitId);
+          
           const nextVisit = calculateNextVisit(updatedVisits);
           const updatedClient = { ...client, visits: updatedVisits, nextVisit };
+
+          // NEW: Generate Log if status changed to completed
+          let newLog;
+          if (updates.status === 'completed' && oldVisit?.status !== 'completed') {
+              const feedbackSummary = updates.feedback 
+                  ? `Feedback: "${updates.feedback}"` 
+                  : 'Visita concluída sem feedback.';
+              const likedStr = updates.liked ? 'Cliente Gostou.' : 'Cliente Não Gostou.';
+              
+              newLog = createLog(
+                  state.currentUser, 
+                  'update', 
+                  'client', 
+                  clientId, 
+                  client.name, 
+                  `Visita Realizada. ${likedStr} ${feedbackSummary}`, 
+                  oldVisit, 
+                  newVisit
+              );
+              syncToCloud(state.systemSettings, 'logs', newLog);
+          }
 
           syncToCloud(state.systemSettings, 'clients', updatedClient);
 
           return {
               clients: state.clients.map(c => c.id === clientId ? updatedClient : c),
+              logs: newLog ? [newLog, ...state.logs] : state.logs,
               notifications: [...state.notifications, { id: Math.random().toString(), type: 'success', message: 'Visita atualizada.' }]
           };
       }),

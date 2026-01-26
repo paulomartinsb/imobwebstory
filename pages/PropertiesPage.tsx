@@ -684,6 +684,9 @@ export const PropertiesPage: React.FC = () => {
                     const isSelected = selectedIds.has(property.id);
                     const author = users.find(u => u.id === property.authorId);
                     
+                    // Logic to lock Edit for brokers if property is published or pending
+                    const isLocked = isBroker && ['published', 'pending_approval'].includes(property.status);
+                    
                     return (
                         <div key={property.id} className={`group relative bg-white rounded-xl border transition-all duration-200 overflow-hidden hover:shadow-lg ${isSelected ? 'border-primary-500 ring-1 ring-primary-500' : 'border-slate-200'}`}>
                             {/* Selection Checkbox Overlay */}
@@ -739,13 +742,15 @@ export const PropertiesPage: React.FC = () => {
                                         )}
                                     </div>
                                     <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button 
-                                            onClick={(e) => { e.stopPropagation(); handleOpenEdit(property); }}
-                                            className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors"
-                                            title="Editar"
-                                        >
-                                            <Edit3 size={16} />
-                                        </button>
+                                        {(!isLocked || isStaff) && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleOpenEdit(property); }}
+                                                className="p-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors"
+                                                title="Editar"
+                                            >
+                                                <Edit3 size={16} />
+                                            </button>
+                                        )}
                                         {isAdmin && (
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); handleDeleteProperty(property.id); }}
@@ -832,6 +837,17 @@ export const PropertiesPage: React.FC = () => {
                 </div>
                 
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                    
+                    {/* NEW WARNING FOR BROKERS EDITING */}
+                    {isBroker && editingId && (
+                        <div className="bg-yellow-50 text-yellow-800 p-4 rounded-lg text-sm border border-yellow-200 flex items-center gap-3">
+                            <AlertCircle size={20} className="shrink-0" />
+                            <div>
+                                <strong>Atenção:</strong> Ao salvar as alterações, este imóvel sairá do modo rascunho e será enviado novamente para a fila de aprovação da gerência.
+                            </div>
+                        </div>
+                    )}
+
                     {/* ... (Reuse form fields from previous version) ... */}
                     <div className="grid grid-cols-2 gap-4">
                         <Input label="Título" required value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="col-span-2" />

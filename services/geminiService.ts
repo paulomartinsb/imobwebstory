@@ -257,7 +257,17 @@ export const generateLeadCommercialInsights = async (client: Client, properties:
             address: p.address
         })).slice(0, 5); // Limit to top 5 candidates
 
-        const visitsHistory = client.visits.map(v => `Data: ${new Date(v.date).toLocaleDateString()}, Status: ${v.status}, Feedback: ${v.feedback || 'Nenhum'}`).join('; ');
+        // Enhanced Visit History formatting for AI
+        const visitsHistory = client.visits.map(v => {
+            const status = v.status;
+            const feedback = v.feedback ? `Feedback: "${v.feedback}"` : '';
+            const liked = v.liked !== undefined ? (v.liked ? '(Gostou do imóvel)' : '(Não gostou do imóvel)') : '';
+            const points = [];
+            if(v.positivePoints) points.push(`Positivos: ${v.positivePoints}`);
+            if(v.negativePoints) points.push(`Negativos: ${v.negativePoints}`);
+            
+            return `[${new Date(v.date).toLocaleDateString()}] Status: ${status} ${liked} ${feedback} ${points.join(', ')}`;
+        }).join('\n');
 
         const locations = client.desiredLocation && client.desiredLocation.length > 0 
         ? client.desiredLocation.join(', ') 

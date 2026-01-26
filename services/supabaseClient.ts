@@ -1,11 +1,37 @@
-import { createClient, RealtimeChannel } from '@supabase/supabase-js';
+import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 
-// Helper to get client dynamically with passed credentials
+// Singleton instance management
+let supabaseInstance: SupabaseClient | null = null;
+let currentUrl = '';
+let currentKey = '';
+
+// Helper to get client dynamically with passed credentials, reusing instance if possible
 export const getSupabase = (url: string, key: string) => {
     if (!url || !key) {
         return null;
     }
-    return createClient(url, key);
+    
+    // Reuse existing instance if credentials haven't changed
+    if (supabaseInstance && url === currentUrl && key === currentKey) {
+        return supabaseInstance;
+    }
+
+    // Create new instance
+    currentUrl = url;
+    currentKey = key;
+    supabaseInstance = createClient(url, key, {
+        auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+        },
+        realtime: {
+            params: {
+                eventsPerSecond: 10,
+            },
+        },
+    });
+    
+    return supabaseInstance;
 };
 
 // Generic insert/upsert for "Document Store" style
@@ -75,10 +101,20 @@ export const subscribeToTable = (
     const supabase = getSupabase(url, key);
     if (!supabase) return null;
 
+    // Use a simplified channel name to avoid potential collision issues in this specific setup
+    const channelName = `public:${table}`;
+
     return supabase
-        .channel(`public:${table}`)
+        .channel(channelName)
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: table }, (payload) => onInsert(payload.new))
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: table }, (payload) => onUpdate(payload.new))
         .on('postgres_changes', { event: 'DELETE', schema: 'public', table: table }, (payload) => onDelete(payload.old))
-        .subscribe();
+        .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                console.log(`[Realtime] Conectado a ${table}`);
+            }
+            if (status === 'CHANNEL_ERROR') {
+                console.error(`[Realtime] Erro no canal ${table}`);
+            }
+        });
 };

@@ -1,14 +1,16 @@
+// ... imports
 import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Input, Badge, Button, PhoneInput } from '../components/ui/Elements';
 import { 
     Search, MessageCircle, Mail, Phone, Share2, 
     Trash2, X, Filter, User, Plus, Save, DollarSign, MapPin, Bed, Ruler,
-    Bath, Car, Loader2, Edit3, Eye, Clock, FileText, CheckCircle, Calendar, Shield, Tag, Building
+    Bath, Car, Loader2, Edit3, Eye, Clock, FileText, CheckCircle, Calendar, Shield, Tag, Building, CalendarCheck, ThumbsUp, ThumbsDown
 } from 'lucide-react';
 import { Client, LeadSource, DetailedInterestProfile, LogEntry } from '../types';
 import { searchCep } from '../services/viaCep';
 
+// ... (LogDiffViewer component remains same) ...
 const LogDiffViewer = ({ prev, curr }: { prev: any, curr: any }) => {
     if (!prev || !curr) return null;
 
@@ -51,7 +53,7 @@ const LogDiffViewer = ({ prev, curr }: { prev: any, curr: any }) => {
 };
 
 export const LeadsPage: React.FC = () => {
-    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines, users, logs } = useStore();
+    const { clients, currentUser, removeClient, addNotification, addClient, updateClient, systemSettings, pipelines, users, logs, properties } = useStore();
     const [searchText, setSearchText] = useState('');
     const [selectedClient, setSelectedClient] = useState<Client | null>(null); // For Quick Actions
     const [viewClient, setViewClient] = useState<Client | null>(null); // For Detail Modal
@@ -59,6 +61,9 @@ export const LeadsPage: React.FC = () => {
     const [filterSource, setFilterSource] = useState<string>('');
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+
+    // Helper to retrieve editing client for rendering visit history in modal
+    const editingClient = editingId ? clients.find(c => c.id === editingId) : null;
 
     // Permissions
     const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
@@ -96,6 +101,7 @@ export const LeadsPage: React.FC = () => {
     const [cepInput, setCepInput] = useState('');
     const [isCepLoading, setIsCepLoading] = useState(false);
 
+    // ... (Filtering Logic, Action Handlers, etc. kept same) ...
     // Filtering
     const filteredClients = useMemo(() => {
         let result = clients;
@@ -302,6 +308,7 @@ export const LeadsPage: React.FC = () => {
 
     return (
         <div className="space-y-6">
+            {/* ... (Header, Search, Table remains same) ... */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">Leads</h1>
@@ -447,7 +454,7 @@ export const LeadsPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Quick Action Modal */}
+            {/* Quick Action Modal ... (Same) */}
             {isActionModalOpen && selectedClient && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
@@ -484,9 +491,10 @@ export const LeadsPage: React.FC = () => {
                 </div>
             )}
 
-            {/* DETAIL & HISTORY MODAL (IMPROVED) */}
+            {/* DETAIL & HISTORY MODAL (VIEW MODE - SAME AS BEFORE) ... */}
             {viewClient && (
                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                    {/* ... (Existing View Modal content) ... */}
                     <div className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl flex flex-col">
                         <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl sticky top-0 z-10">
                             <div className="flex items-center gap-3">
@@ -510,6 +518,7 @@ export const LeadsPage: React.FC = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                                 {/* Left Column: Info */}
                                 <div className="space-y-6 md:col-span-2">
+                                    {/* ... (Existing Contact & Profile Info) ... */}
                                     {/* Contact & Owner */}
                                     <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 grid grid-cols-2 gap-4">
                                         <div>
@@ -591,6 +600,50 @@ export const LeadsPage: React.FC = () => {
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* COMPLETED VISITS FEEDBACK SECTION */}
+                                    {viewClient.visits.filter(v => v.status === 'completed').length > 0 && (
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 mb-3">
+                                                <CalendarCheck size={16} className="text-primary-500"/>
+                                                Relatórios de Visitas
+                                            </h3>
+                                            <div className="space-y-3">
+                                                {viewClient.visits.filter(v => v.status === 'completed').sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(v => {
+                                                    const property = properties.find(p => p.id === v.propertyId);
+                                                    return (
+                                                        <div key={v.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    {v.liked ? (
+                                                                        <span className="bg-green-100 text-green-700 p-1 rounded-full"><ThumbsUp size={14}/></span>
+                                                                    ) : (
+                                                                        <span className="bg-red-100 text-red-700 p-1 rounded-full"><ThumbsDown size={14}/></span>
+                                                                    )}
+                                                                    <div className="text-sm font-bold text-slate-700">
+                                                                        Visita {v.liked ? 'Positiva' : 'Negativa'}
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-xs text-slate-400">{new Date(v.date).toLocaleDateString()}</span>
+                                                            </div>
+                                                            
+                                                            {property && (
+                                                                <div className="text-xs text-primary-600 font-medium mb-2 flex items-center gap-1 bg-primary-50 px-2 py-1 rounded w-fit">
+                                                                    <Building size={12}/> {property.code} - {property.title}
+                                                                </div>
+                                                            )}
+
+                                                            {v.feedback && (
+                                                                <p className="text-sm text-slate-600 bg-slate-50 p-2 rounded border border-slate-100 italic">
+                                                                    "{v.feedback}"
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Right Column: History (Logs) */}
@@ -658,6 +711,7 @@ export const LeadsPage: React.FC = () => {
                         </div>
                         <form onSubmit={handleSaveLead} className="p-6 space-y-6">
                             
+                            {/* ... (Section 1 and 2 same as before) ... */}
                             {/* SECTION 1: CONTACT */}
                             <div className="space-y-4">
                                 <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-2 mb-4">Dados do Contato</h3>
@@ -814,6 +868,42 @@ export const LeadsPage: React.FC = () => {
                                     <textarea className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm h-20" placeholder="Ex: Cliente tem pressa, prefere andar alto..." value={newLeadData.interestProfile.notes} onChange={e => setNewLeadData({ ...newLeadData, interestProfile: { ...newLeadData.interestProfile, notes: e.target.value } })} />
                                 </div>
                             </div>
+
+                            {/* SECTION 3: VISIT HISTORY & FEEDBACKS (NEW) */}
+                            {editingId && editingClient && editingClient.visits.length > 0 && (
+                                <div className="space-y-4 pt-4 border-t border-slate-100">
+                                    <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                                        <CalendarCheck size={16} className="text-primary-600"/>
+                                        Histórico de Visitas e Feedbacks
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {editingClient.visits.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()).map(visit => (
+                                            <div key={visit.id} className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div className="flex items-center gap-2">
+                                                        <Badge color={visit.status === 'completed' ? 'green' : visit.status === 'cancelled' ? 'red' : 'blue'}>
+                                                            {visit.status === 'completed' ? 'Realizada' : visit.status === 'cancelled' ? 'Cancelada' : 'Agendada'}
+                                                        </Badge>
+                                                        <span className="text-xs text-slate-500">{new Date(visit.date).toLocaleString()}</span>
+                                                    </div>
+                                                    {visit.liked !== undefined && (
+                                                        <div className="flex items-center gap-1 text-xs font-bold">
+                                                            {visit.liked ? <span className="text-green-600 flex gap-1"><ThumbsUp size={12}/> Gostou</span> : <span className="text-red-600 flex gap-1"><ThumbsDown size={12}/> Não Gostou</span>}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                {visit.status === 'completed' && (
+                                                    <div className="text-xs text-slate-600 space-y-1 mt-2 border-t border-slate-200 pt-2">
+                                                        {visit.feedback && <p><strong className="text-slate-700">Feedback:</strong> {visit.feedback}</p>}
+                                                        {visit.positivePoints && <p className="text-green-700"><strong className="text-slate-700">Positivos:</strong> {visit.positivePoints}</p>}
+                                                        {visit.negativePoints && <p className="text-red-700"><strong className="text-slate-700">Negativos:</strong> {visit.negativePoints}</p>}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             <div className="pt-2 flex justify-end gap-2">
                                 <Button type="button" variant="outline" onClick={() => setIsAddModalOpen(false)}>Cancelar</Button>
