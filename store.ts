@@ -25,7 +25,7 @@ interface AppState {
   login: (email: string, password: string) => boolean;
   logout: () => void;
   updateUserRole: (userId: string, newRole: UserRole) => void;
-  updateUser: (userId: string, updates: Partial<User>) => void; // New Action
+  updateUser: (userId: string, updates: Partial<User>) => void;
   addUser: (userData: Omit<User, 'id' | 'avatar'>) => boolean;
   removeUser: (userId: string) => void;
   toggleUserBlock: (userId: string) => void;

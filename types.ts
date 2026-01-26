@@ -1,20 +1,18 @@
-
-
-export type PropertyType = string; // Changed from union to string to allow dynamic types
+export type PropertyType = string;
 export type PropertyStatus = 'draft' | 'pending_approval' | 'published' | 'sold' | 'reserved' | 'inactive';
 export type UserRole = 'admin' | 'finance' | 'employee' | 'broker' | 'captator';
-export type LeadSource = string; // Changed from union to string to allow dynamic sources
+export type LeadSource = string;
 
 export interface User {
   id: string;
   name: string;
   email: string;
-  phone?: string; // New: Phone number
-  password?: string; // New: Password field for management
+  phone?: string; // Telefone do usuário
+  password?: string;
   role: UserRole;
   avatar: string;
-  blocked?: boolean; // New: Indica se o acesso está bloqueado
-  deletedAt?: string; // Soft delete timestamp
+  blocked?: boolean;
+  deletedAt?: string;
 }
 
 export interface PropertyTypeOption {
@@ -23,30 +21,27 @@ export interface PropertyTypeOption {
 }
 
 export interface LeadAgingConfig {
-    freshLimit: number; // Dias para considerar "Novo" (Verde)
-    warmLimit: number; // Dias para considerar "Morno" (Amarelo) - Acima disso é "Frio" (Vermelho)
-    freshColor: string; // ex: 'green', 'blue'
-    warmColor: string; // ex: 'yellow', 'orange'
-    coldColor: string; // ex: 'red', 'gray'
+    freshLimit: number;
+    warmLimit: number;
+    freshColor: string;
+    warmColor: string;
+    coldColor: string;
 }
 
 export interface TeamPerformanceConfig {
-    // Thresholds (Metas mínimas no período selecionado)
     minProperties: number;
     minLeads: number;
     minVisits: number;
-
-    // Labels (Nomes dos Status)
-    activeLabel: string;   // Ex: "Produtivo"
-    warningLabel: string;  // Ex: "Atenção"
-    inactiveLabel: string; // Ex: "Cobrar / Parado"
+    activeLabel: string;
+    warningLabel: string;
+    inactiveLabel: string;
 }
 
 export interface SmtpConfig {
     host: string;
     port: number;
     user: string;
-    pass: string; // App Password for Gmail
+    pass: string;
     secure: boolean;
     fromName: string;
     enabled: boolean;
@@ -54,42 +49,37 @@ export interface SmtpConfig {
 
 export interface SystemSettings {
   allowNewRegistrations: boolean;
-  requirePropertyApproval: boolean; // Se false, corretores publicam direto
+  requirePropertyApproval: boolean;
   maintenanceMode: boolean;
   companyName: string;
-  propertyTypes: PropertyTypeOption[]; // Lista dinâmica de tipos de imóveis
-  propertyFeatures: string[]; // Lista dinâmica de diferenciais
-  leadSources: string[]; // Lista dinâmica de origens de leads
-  availableLocations: string[]; // Lista dinâmica de bairros/cidades sugeridos
-  propertyDescriptionPrompt: string; // Prompt editável para geração de descrição
+  propertyTypes: PropertyTypeOption[];
+  propertyFeatures: string[];
+  leadSources: string[];
+  availableLocations: string[];
+  propertyDescriptionPrompt: string;
   
-  // Integração IA
-  geminiApiKey: string; // Chave da API do Google Gemini
-
-  // Integração Supabase (Banco de Dados)
+  geminiApiKey: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
 
-  // Novos Prompts de CRM e Match
-  matchAiPrompt: string; // Prompt para cálculo de compatibilidade
-  crmGlobalInsightsPrompt: string; // Prompt para insights gerais do pipeline
-  crmCardInsightsPrompt: string; // Prompt para insights do lead individual
+  matchAiPrompt: string;
+  crmGlobalInsightsPrompt: string;
+  crmCardInsightsPrompt: string;
 
-  leadAging: LeadAgingConfig; // Configuração de cores por tempo
+  leadAging: LeadAgingConfig;
+  teamPerformance: TeamPerformanceConfig;
   
-  teamPerformance: TeamPerformanceConfig; // Nova configuração de monitoramento
-  
-  smtpConfig?: SmtpConfig; // Configuração de envio de e-mails
+  smtpConfig?: SmtpConfig; // Configuração SMTP
 }
 
 export interface Property {
   id: string;
-  authorId: string; // Quem cadastrou
-  approvedBy?: string; // Quem aprovou (se aplicável)
-  rejectionReason?: string; // Motivo da reprovação (se aplicável)
+  authorId: string;
+  approvedBy?: string;
+  rejectionReason?: string;
   
-  submittedAt?: string; // Data de envio para aprovação (Entrada na fila)
-  approvedAt?: string;  // Data da aprovação (Publicação)
+  submittedAt?: string;
+  approvedAt?: string;
 
   code: string;
   title: string;
@@ -100,8 +90,7 @@ export interface Property {
   bedrooms: number;
   bathrooms: number;
   
-  // Address Fields
-  address: string; // Formatted full address for display/legacy compatibility
+  address: string;
   zipCode?: string;
   street?: string;
   number?: string;
@@ -110,24 +99,22 @@ export interface Property {
   city?: string;
   state?: string;
 
-  // Referral Fields (Captator specific)
-  ownerName?: string;
-  ownerPhone?: string;
+  ownerName?: string; // Nome do proprietário
+  ownerPhone?: string; // Telefone do proprietário
 
   features: string[];
   status: PropertyStatus;
-  images: string[]; // Changed from 'image: string' to support gallery (max 10)
-  createdAt?: string; // New field for date filtering
-  updatedAt?: string; // Data da última atualização
-  updatedBy?: string; // ID de quem atualizou
-  deletedAt?: string; // Soft delete timestamp
+  images: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+  deletedAt?: string;
 }
 
-// Dynamic Pipeline Types
 export interface PipelineStageConfig {
     id: string;
     name: string;
-    color: string; // Tailwind border color class e.g., 'border-blue-400'
+    color: string;
     order: number;
 }
 
@@ -140,95 +127,70 @@ export interface Pipeline {
 
 export interface Visit {
     id: string;
-    date: string; // ISO String
-    propertyId: string; // Link to Property
+    date: string;
+    propertyId: string;
     status: 'scheduled' | 'completed' | 'cancelled';
     notes?: string;
-    // Feedback Fields
-    feedback?: string; // Resultado geral
+    feedback?: string;
     positivePoints?: string;
     negativePoints?: string;
-    liked?: boolean; // Se gostou ou não
+    liked?: boolean;
 }
 
-// Detailed Profile for AI Matching
 export interface DetailedInterestProfile {
     propertyTypes: string[];
     condition: 'pronto' | 'planta' | 'construcao' | 'indiferente';
     usage: 'moradia' | 'investimento';
-    
-    // Location
     cities: string[];
     neighborhoods: string[];
-    proximityTo: string[]; // e.g., 'metro', 'escola', 'parque'
-
-    // Features
+    proximityTo: string[];
     minBedrooms: number;
     minSuites: number;
     minParking: number;
     minArea: number;
-    mustHaveFeatures: string[]; // Diferenciais obrigatórios
-    
-    // Financial
+    mustHaveFeatures: string[];
     maxPrice: number;
     paymentMethod: 'vista' | 'financiamento' | 'permuta' | 'indiferente';
     hasFgts: boolean;
-    
-    // Lifestyle / Soft Requirements
     sunOrientation?: 'norte' | 'sul' | 'leste' | 'oeste' | 'indiferente';
     floorPreference?: 'baixo' | 'alto' | 'indiferente';
-    notes: string; // Free text for AI
+    notes: string;
 }
 
 export interface Client {
   id: string;
-  ownerId: string; // Corretor responsável
-  pipelineId?: string; // Se null/undefined, está apenas no Banco de Leads
+  ownerId: string;
+  pipelineId?: string;
   name: string;
   email: string;
   phone: string;
-  alternativePhones?: string[]; // New: Multiple phones
-  
-  // New Professional Fields
+  alternativePhones?: string[];
   company?: string;
   jobTitle?: string;
-  clientType?: string; // e.g., 'buyer', 'seller', 'investor'
-
-  budget: number; // Orçamento Máximo
-  minBudget?: number; // Orçamento Mínimo (Novo)
+  clientType?: string;
+  budget: number;
+  minBudget?: number;
   interest: PropertyType[];
-  
-  // Legacy Matching Fields (kept for backward compat, but InterestProfile is preferred)
   desiredLocation: string[]; 
   minBedrooms?: number;
   minBathrooms?: number; 
   minParking?: number;   
   minArea?: number;
   desiredFeatures?: string[]; 
-  
-  // New: Structured Profile
   interestProfile?: DetailedInterestProfile;
-
-  interestedPropertyIds: string[]; // New: Manually linked property IDs
-
-  stage: string; // Agora é uma string dinâmica baseada no ID da etapa do pipeline
+  interestedPropertyIds: string[];
+  stage: string;
   source: LeadSource;
   notes?: string;
-  
-  visits: Visit[]; // New: List of visits linked to properties
-  nextVisit?: string; // Computed: The earliest upcoming scheduled visit
-
-  // New Profile Sections
+  visits: Visit[];
+  nextVisit?: string;
   familyMembers?: { id: string; name: string; relationship: string }[];
   documents?: { name: string; url: string; date: string }[];
-  followers?: string[]; // IDs of users watching this lead
-
+  followers?: string[];
   lastContact: string;
   createdAt: string;
-  
-  // Lost Logic
-  lostReason?: string; // Motivo da perda
-  deletedAt?: string; // Soft delete timestamp
+  lostReason?: string;
+  deletedAt?: string;
 }
 
 export interface DashboardMetrics {
@@ -237,17 +199,16 @@ export interface DashboardMetrics {
   salesVolume: number;
 }
 
-// --- Audit Log System ---
 export interface LogEntry {
     id: string;
     timestamp: string;
-    userId: string; // Quem fez a ação
+    userId: string;
     userName: string;
     action: 'create' | 'update' | 'delete' | 'restore' | 'approval';
     entity: 'client' | 'property' | 'settings' | 'pipeline';
-    entityId: string; // ID do objeto alterado (ou 'system' para settings)
-    entityName: string; // Nome legível (ex: Nome do cliente)
-    details: string; // Descrição curta
-    previousData?: any; // Snapshot antes da mudança
-    newData?: any; // Snapshot depois da mudança
+    entityId: string;
+    entityName: string;
+    details: string;
+    previousData?: any;
+    newData?: any;
 }

@@ -8,9 +8,6 @@ export interface EmailOptions {
 
 /**
  * Simulates sending an email via SMTP.
- * Note: Browsers cannot securely connect directly to SMTP servers (TCP sockets are restricted).
- * In a real production environment, this function would call a backend endpoint (Supabase Function, Node.js API, etc.)
- * which would then handle the SMTP handshake using the credentials.
  */
 export const sendSystemEmail = async (options: EmailOptions, config?: SmtpConfig): Promise<boolean> => {
     if (!config || !config.enabled) {

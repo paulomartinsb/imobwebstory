@@ -3,7 +3,7 @@ import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
 import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
-import { UserRole, LogEntry, User } from '../types';
+import { UserRole, LogEntry, User, SmtpConfig } from '../types';
 import { syncEntityToSupabase } from '../services/supabaseClient';
 
 const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }) => {
@@ -181,6 +181,19 @@ export const AdminPage: React.FC = () => {
 
   const handleTeamPerfSave = () => {
       updateSystemSettings({ teamPerformance: teamPerfConfig });
+  };
+
+  const updateSmtp = (updates: Partial<SmtpConfig>) => {
+      const current = settingsForm.smtpConfig || {
+          host: 'smtp.gmail.com',
+          port: 587,
+          user: '',
+          pass: '',
+          secure: false,
+          fromName: 'Sistema WebImob',
+          enabled: false
+      };
+      setSettingsForm({ ...settingsForm, smtpConfig: { ...current, ...updates } });
   };
 
   const handleAddUser = () => {
@@ -607,7 +620,7 @@ export const AdminPage: React.FC = () => {
                                 type="checkbox" 
                                 className="w-5 h-5" 
                                 checked={settingsForm.smtpConfig?.enabled || false}
-                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), enabled: e.target.checked} as any })}
+                                onChange={e => updateSmtp({ enabled: e.target.checked })}
                               />
                           </div>
                           
@@ -616,14 +629,14 @@ export const AdminPage: React.FC = () => {
                                 label="Host SMTP" 
                                 placeholder="smtp.gmail.com"
                                 value={settingsForm.smtpConfig?.host || ''}
-                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), host: e.target.value} as any })}
+                                onChange={e => updateSmtp({ host: e.target.value })}
                               />
                               <Input 
                                 label="Porta" 
                                 type="number"
                                 placeholder="587"
                                 value={settingsForm.smtpConfig?.port || ''}
-                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), port: Number(e.target.value)} as any })}
+                                onChange={e => updateSmtp({ port: Number(e.target.value) })}
                               />
                           </div>
                           <div className="grid grid-cols-2 gap-4">
@@ -631,21 +644,21 @@ export const AdminPage: React.FC = () => {
                                 label="Usuário (Email)" 
                                 placeholder="seu-email@gmail.com"
                                 value={settingsForm.smtpConfig?.user || ''}
-                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), user: e.target.value} as any })}
+                                onChange={e => updateSmtp({ user: e.target.value })}
                               />
                               <Input 
                                 label="Senha / App Password" 
                                 type="password"
                                 placeholder="****"
                                 value={settingsForm.smtpConfig?.pass || ''}
-                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), pass: e.target.value} as any })}
+                                onChange={e => updateSmtp({ pass: e.target.value })}
                               />
                           </div>
                           <Input 
                                 label="Nome do Remetente" 
                                 placeholder="Sistema Imobiliário"
                                 value={settingsForm.smtpConfig?.fromName || ''}
-                                onChange={e => setSettingsForm({...settingsForm, smtpConfig: {...(settingsForm.smtpConfig || {}), fromName: e.target.value} as any })}
+                                onChange={e => updateSmtp({ fromName: e.target.value })}
                           />
                           <p className="text-xs text-slate-500 mt-1">
                               <strong>Nota para Gmail:</strong> Você deve usar uma "Senha de App" (App Password) gerada nas configurações de segurança da sua conta Google, e não sua senha normal.
