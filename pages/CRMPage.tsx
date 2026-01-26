@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Badge, Button, Input, PhoneInput, formatPhone } from '../components/ui/Elements';
 import { Client, PipelineStageConfig, PropertyType, LeadSource, Property, Visit, DetailedInterestProfile } from '../types';
-import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, DollarSign, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock } from 'lucide-react';
+import { MoreHorizontal, Phone, Mail, Sparkles, Trash2, X, Plus, Globe, Share2, Copy, Terminal, UserPlus, MapPin, Bed, Ruler, Filter, Search, Settings, Edit3, ArrowLeft, ArrowRight, Save, FileText, User, Users, CheckCircle, AlertCircle, Calendar, Loader2, ThumbsUp, ThumbsDown, Pencil, XCircle, Link, CalendarPlus, Bath, Car, Building, Compass, Layers, GripVertical, Archive, PlayCircle, Tag, MessageCircle, Clock } from 'lucide-react';
 import { calculateClientMatch, generatePipelineInsights, generateLeadCommercialInsights, findTopMatches } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
@@ -298,8 +298,7 @@ const ClientCard: React.FC<{
                 
                 <div className="bg-slate-50 rounded-lg p-2 border border-slate-100 space-y-1.5 mt-1">
                     <div className="flex justify-between items-center text-xs">
-                        <div className="flex items-center gap-1 font-bold text-emerald-600">
-                            <DollarSign size={12} />
+                        <div className="font-bold text-emerald-600">
                             {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact', maximumFractionDigits: 1 }).format(client.budget)}
                         </div>
                         <div className="flex gap-1">
@@ -795,7 +794,27 @@ export const CRMPage: React.FC = () => {
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)]">
         <div className="flex justify-between items-center mb-4 shrink-0">
-            <h1 className="text-2xl font-bold text-slate-800">CRM</h1>
+            <div className="flex items-center gap-4">
+                <h1 className="text-2xl font-bold text-slate-800">CRM</h1>
+                
+                {/* Admin Filter */}
+                {isStaff && (
+                    <div className="hidden md:flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-1.5 shadow-sm">
+                        <Filter size={14} className="text-slate-400" />
+                        <select 
+                            className="bg-transparent border-none text-sm text-slate-700 font-medium focus:ring-0 cursor-pointer outline-none w-40"
+                            value={ownerFilter}
+                            onChange={(e) => setOwnerFilter(e.target.value)}
+                        >
+                            <option value="">Todos (Equipe)</option>
+                            {users.map(u => (
+                                <option key={u.id} value={u.id}>{u.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
+            </div>
+            
             <div className="flex gap-2">
                 <Button onClick={handleInsights} variant="secondary">
                     <Sparkles size={18} /> Insights IA

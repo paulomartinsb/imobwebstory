@@ -521,7 +521,7 @@ export const LeadsPage: React.FC = () => {
 
                                             {/* Metrics Row */}
                                             <div className="flex flex-wrap items-center gap-4 text-sm text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-100">
-                                                <span className="flex items-center gap-1 font-bold text-emerald-600"><DollarSign size={14}/> Até {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact' }).format(viewClient.budget)}</span>
+                                                <span className="font-bold text-emerald-600">Até {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', notation: 'compact' }).format(viewClient.budget)}</span>
                                                 {viewClient.minBedrooms && <span className="flex items-center gap-1"><Bed size={14}/> {viewClient.minBedrooms}+ Qtos</span>}
                                                 {viewClient.minBathrooms && <span className="flex items-center gap-1"><Bath size={14}/> {viewClient.minBathrooms}+ Banh</span>}
                                                 {viewClient.minParking && <span className="flex items-center gap-1"><Car size={14}/> {viewClient.minParking}+ Vagas</span>}

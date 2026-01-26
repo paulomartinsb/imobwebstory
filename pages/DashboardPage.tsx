@@ -3,6 +3,8 @@ import { Card, Button, Input } from '../components/ui/Elements';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { Building, Users, Banknote, FileSignature, TrendingUp, Calendar, Clock, MapPin, User, ChevronRight, ChevronLeft, Filter, AlertTriangle, CheckCircle, Search, Activity } from 'lucide-react';
 import { useStore } from '../store';
+import { PropertyDetailModal } from '../components/PropertyDetailModal';
+import { Property } from '../types';
 
 const MetricCard = ({ title, value, icon: Icon, trend, subtext }: any) => (
   <Card className="p-6 flex items-start justify-between">
@@ -27,6 +29,7 @@ export const DashboardPage: React.FC = () => {
   const { properties, clients, currentUser, users, systemSettings } = useStore();
   const [selectedBrokerId, setSelectedBrokerId] = useState<string>('all');
   const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [viewProperty, setViewProperty] = useState<Property | null>(null);
 
   // Helper to get Local ISO Date (YYYY-MM-DD) avoiding UTC shifts
   const toLocalISO = (date: Date) => {
@@ -34,10 +37,10 @@ export const DashboardPage: React.FC = () => {
       return new Date(date.getTime() - offset).toISOString().split('T')[0];
   }
 
-  // Performance Filters
+  // Performance Filters - Default: Start of Current Month to Today
   const [perfStartDate, setPerfStartDate] = useState(() => {
       const date = new Date();
-      date.setDate(date.getDate() - 30); // Default: Last 30 days
+      date.setDate(1); // Set to first day of the month
       return toLocalISO(date);
   });
   const [perfEndDate, setPerfEndDate] = useState(() => {
@@ -95,7 +98,8 @@ export const DashboardPage: React.FC = () => {
               clientName: client.name,
               date: new Date(visit.date),
               propertyCode: property?.code || 'S/ Ref',
-              location: locationDisplay
+              location: locationDisplay,
+              property // Include property object for modal
           };
       });
   }).sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -191,8 +195,15 @@ export const DashboardPage: React.FC = () => {
               // 1. Properties Logic
               const userAllProperties = properties.filter(p => p.authorId === user.id);
               
-              // Metric: Props Pending (Total Backlog - ignores date filter to show current status)
-              const propsPending = userAllProperties.filter(p => p.status === 'pending_approval').length;
+              // Metric: Props Pending (Submitted/Created within period that are currently pending)
+              const propsPending = userAllProperties.filter(p => {
+                  if (p.status !== 'pending_approval') return false;
+                  // Use submittedAt if available, fallback to createdAt
+                  const dateToCheckStr = p.submittedAt || p.createdAt;
+                  if (!dateToCheckStr) return false;
+                  const dateToCheck = new Date(dateToCheckStr);
+                  return dateToCheck >= start && dateToCheck <= end;
+              }).length;
 
               // Metric: Props Approved (Productivity in period)
               // Checks if 'approvedAt' falls in period. Fallback to 'createdAt' if approvedAt is missing.
@@ -267,7 +278,7 @@ export const DashboardPage: React.FC = () => {
                   name: user.name,
                   role: user.role,
                   avatar: user.avatar,
-                  propsPending, // Display Metric: Total Pending (Backlog)
+                  propsPending, // Display Metric: Pending (Submitted within period)
                   propsApproved, // Display Metric: Approved in Period
                   leadsCount,    // Display Metric: Leads in Period
                   visitsCount,   // Display Metric: Visits in Period
@@ -371,7 +382,7 @@ export const DashboardPage: React.FC = () => {
                       <thead className="bg-white border-b border-slate-100 text-slate-500 font-semibold uppercase text-xs">
                           <tr>
                               <th className="px-6 py-4">Membro</th>
-                              <th className="px-6 py-4 text-center" title="Total na fila, independente da data">Aguardando Aprovação</th>
+                              <th className="px-6 py-4 text-center" title="Enviados para aprovação dentro do período">Aguardando Aprovação</th>
                               <th className="px-6 py-4 text-center" title="Aprovados dentro do período selecionado">Imóveis Aprovados</th>
                               <th className="px-6 py-4 text-center" title="Criados dentro do período selecionado">Leads Captados</th>
                               <th className="px-6 py-4 text-center" title="Concluídas dentro do período selecionado">Visitas Realizadas</th>
@@ -506,7 +517,16 @@ export const DashboardPage: React.FC = () => {
                                     <span className="truncate">{v.location}</span>
                                 </div>
                                 <div className="text-[10px] text-primary-600 font-medium mt-1">
-                                    Ref: {v.propertyCode}
+                                    {v.property ? (
+                                        <button 
+                                            onClick={() => setViewProperty(v.property!)}
+                                            className="hover:underline hover:text-primary-800 transition-colors text-left"
+                                        >
+                                            Ref: {v.propertyCode}
+                                        </button>
+                                    ) : (
+                                        <span>Ref: {v.propertyCode}</span>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -544,6 +564,16 @@ export const DashboardPage: React.FC = () => {
               </div>
           </div>
       </Card>
+
+      {/* Modal */}
+      {viewProperty && (
+        <PropertyDetailModal
+            property={viewProperty}
+            onClose={() => setViewProperty(null)}
+            currentUser={currentUser}
+            isStaff={isAdmin} 
+        />
+      )}
     </div>
   );
 };

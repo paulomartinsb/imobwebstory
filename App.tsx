@@ -9,6 +9,7 @@ import { LeadsPage } from './pages/LeadsPage';
 import { ContractsPage } from './pages/ContractsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { AdminPage } from './pages/AdminPage';
+import { HelpPage } from './pages/HelpPage';
 import { PublicLeadFormPage } from './pages/PublicLeadFormPage';
 import { LoginPage } from './pages/LoginPage';
 import { ReferralPage } from './pages/ReferralPage';
@@ -75,6 +76,7 @@ function App() {
                         <Route path="contracts" element={<ContractsPage />} />
                         <Route path="settings" element={<SettingsPage />} />
                         <Route path="admin" element={<AdminPage />} />
+                        <Route path="help" element={<HelpPage />} />
                         <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
                 </Layout>

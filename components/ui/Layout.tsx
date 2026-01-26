@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus, Send } from 'lucide-react';
+import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus, Send, HelpCircle } from 'lucide-react';
 import { ToastContainer } from './Toast';
 import { useStore } from '../../store';
 
@@ -101,6 +101,7 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
                   <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-4 mt-2">Área do Parceiro</div>
                   <SidebarItem to="/referrals" icon={Send} label="Indicar Imóveis" />
                   <SidebarItem to="/settings" icon={Settings} label="Meu Perfil" />
+                  <SidebarItem to="/help" icon={HelpCircle} label="Ajuda" />
               </>
           ) : (
               // Default Menu for Other Roles
@@ -119,6 +120,7 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
                   )}
                   
                   <SidebarItem to="/settings" icon={Settings} label="Configurações" />
+                  <SidebarItem to="/help" icon={HelpCircle} label="Ajuda & Tutoriais" />
               </>
           )}
         </nav>
