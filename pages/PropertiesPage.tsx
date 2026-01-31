@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Input, Badge, PhoneInput } from '../components/ui/Elements';
-import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History, User } from 'lucide-react';
-import { generatePropertyDescription } from '../services/geminiService';
+import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History, User, Mic, MicOff, StopCircle } from 'lucide-react';
+import { generatePropertyDescription, parsePropertyVoiceCommand } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { Property, PropertyType, PropertyStatus } from '../types';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
@@ -43,6 +43,12 @@ export const PropertiesPage: React.FC = () => {
 
   // Bulk Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Voice Assistant State
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Permissions Check
   const isBroker = currentUser?.role === 'broker' || currentUser?.role === 'captator';
@@ -85,6 +91,72 @@ export const PropertiesPage: React.FC = () => {
       const cities = new Set(properties.map(p => p.city).filter(Boolean));
       return Array.from(cities).sort();
   }, [properties]);
+
+  // --- Voice Logic ---
+  const startRecording = async () => {
+      try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const mediaRecorder = new MediaRecorder(stream);
+          mediaRecorderRef.current = mediaRecorder;
+          audioChunksRef.current = [];
+
+          mediaRecorder.ondataavailable = (event) => {
+              if (event.data.size > 0) {
+                  audioChunksRef.current.push(event.data);
+              }
+          };
+
+          mediaRecorder.onstop = handleAudioStop;
+          mediaRecorder.start();
+          setIsRecording(true);
+      } catch (err) {
+          console.error("Error accessing microphone:", err);
+          addNotification('error', 'Erro ao acessar microfone. Verifique as permissões.');
+      }
+  };
+
+  const stopRecording = () => {
+      if (mediaRecorderRef.current && isRecording) {
+          mediaRecorderRef.current.stop();
+          mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop()); // Stop stream
+          setIsRecording(false);
+          setIsProcessingAudio(true);
+      }
+  };
+
+  const handleAudioStop = async () => {
+      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      const reader = new FileReader();
+      
+      reader.onloadend = async () => {
+          const base64Audio = (reader.result as string).split(',')[1];
+          
+          try {
+              const result = await parsePropertyVoiceCommand(base64Audio, formData);
+              
+              if (result.fields) {
+                  setFormData(prev => ({ ...prev, ...result.fields }));
+              }
+
+              if (result.question) {
+                  // Speak the question
+                  const utterance = new SpeechSynthesisUtterance(result.question);
+                  utterance.lang = 'pt-BR';
+                  window.speechSynthesis.speak(utterance);
+                  addNotification('info', `IA: ${result.question}`);
+              } else {
+                  addNotification('success', 'Dados preenchidos por voz.');
+              }
+
+          } catch (e) {
+              addNotification('error', 'Erro ao processar áudio.');
+          } finally {
+              setIsProcessingAudio(false);
+          }
+      };
+      
+      reader.readAsDataURL(audioBlob);
+  };
 
   // --- Filter Logic ---
 
@@ -831,9 +903,36 @@ export const PropertiesPage: React.FC = () => {
             <div className="bg-white rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl animate-in fade-in zoom-in duration-200">
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
                     <h2 className="text-xl font-bold text-slate-800">{editingId ? 'Editar Imóvel' : 'Cadastrar Novo Imóvel'}</h2>
-                    <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                        <X size={24} />
-                    </button>
+                    
+                    <div className="flex items-center gap-2">
+                        {/* Voice Assistant Toggle */}
+                        <div className="flex items-center gap-2 mr-4 bg-slate-50 border border-slate-200 rounded-full px-1.5 py-1.5">
+                            {isRecording ? (
+                                <button 
+                                    onClick={stopRecording} 
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors animate-pulse"
+                                >
+                                    <StopCircle size={16} /> Parar e Processar
+                                </button>
+                            ) : isProcessingAudio ? (
+                                <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full">
+                                    <Loader2 size={16} className="animate-spin" /> Pensando...
+                                </div>
+                            ) : (
+                                <button 
+                                    onClick={startRecording}
+                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-full transition-all text-xs font-medium border border-transparent hover:border-primary-100"
+                                    title="Preencher por Voz"
+                                >
+                                    <Mic size={16} /> Assistente de Voz
+                                </button>
+                            )}
+                        </div>
+
+                        <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                            <X size={24} />
+                        </button>
+                    </div>
                 </div>
                 
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">

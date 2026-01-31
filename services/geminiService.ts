@@ -300,3 +300,68 @@ export const generateLeadCommercialInsights = async (client: Client, properties:
         return "Erro ao processar estratégia comercial.";
     }
 }
+
+/**
+ * Process audio input for property registration.
+ * Extracts JSON data and a follow-up question.
+ */
+export const parsePropertyVoiceCommand = async (
+    audioBase64: string, 
+    currentData: Partial<Property>
+): Promise<{ fields: Partial<Property>, question: string }> => {
+    try {
+        const ai = getAI();
+        
+        const systemPrompt = `
+        Você é um assistente imobiliário inteligente.
+        
+        TAREFA:
+        1. Ouça a descrição do imóvel que o usuário está falando.
+        2. Extraia os dados técnicos (preço, quartos, área, endereço, tipo, diferenciais).
+        3. Mescle com os dados atuais que já temos: ${JSON.stringify(currentData)}.
+        4. Identifique o que ainda falta para um cadastro mínimo viável (mínimo: Título, Preço, Tipo, Quartos, Bairro).
+        
+        SAÍDA ESPERADA (JSON):
+        {
+            "fields": {
+                "title": "...",
+                "price": 1234,
+                "type": "...",
+                "bedrooms": 2,
+                "address": "...",
+                "neighborhood": "...",
+                "description": "..."
+            },
+            "question": "Pergunta curta e direta sobre o dado mais importante que falta. Se tiver tudo, pergunte se deseja salvar."
+        }
+
+        Regras:
+        - Se o usuário falar "Salvar" ou "Finalizar", a pergunta deve ser vazia.
+        - Normalize o 'type' para: apartamento, casa, cobertura, sobrado, duplex, terreno, comercial, studio, sitio.
+        - Extraia diferenciais para o campo 'features' (array).
+        `;
+
+        const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash-native-audio-preview-12-2025',
+            contents: [
+                {
+                    inlineData: {
+                        mimeType: 'audio/webm', // Assuming webm from MediaRecorder usually
+                        data: audioBase64
+                    }
+                },
+                { text: systemPrompt }
+            ],
+            config: {
+                responseMimeType: 'application/json'
+            }
+        });
+
+        const jsonText = (response.text || "{}").replace(/```json/g, '').replace(/```/g, '').trim();
+        return JSON.parse(jsonText);
+
+    } catch (error) {
+        console.error("Voice Command Error:", error);
+        return { fields: {}, question: "Desculpe, não consegui entender o áudio. Pode repetir?" };
+    }
+};
