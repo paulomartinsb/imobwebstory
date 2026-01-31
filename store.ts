@@ -286,14 +286,19 @@ export const useStore = create<AppState>()(
           syncToCloud(state.systemSettings, 'properties', updated); 
           
           // CRITICAL WEBHOOK UPDATE:
-          // Trigger if it IS published (updates the live site)
-          // OR if it WAS published but now isn't (updates site to remove/draft it)
+          // Detect changes in status for accurate event types
           const isPublished = updated.status === 'published';
           const wasPublished = old.status === 'published';
 
-          if (isPublished || wasPublished) {
-              const eventType = isPublished ? 'update' : 'status_change'; 
-              triggerIntegrationWebhook(state.systemSettings.n8nWebhookUrl, eventType, updated);
+          if (isPublished && !wasPublished) {
+             // Draft -> Published (First time or re-publish)
+             triggerIntegrationWebhook(state.systemSettings.n8nWebhookUrl, 'publish', updated);
+          } else if (!isPublished && wasPublished) {
+             // Published -> Draft (Unpublish)
+             triggerIntegrationWebhook(state.systemSettings.n8nWebhookUrl, 'status_change', updated);
+          } else if (isPublished && wasPublished) {
+             // Published -> Published (Edit content)
+             triggerIntegrationWebhook(state.systemSettings.n8nWebhookUrl, 'update', updated);
           }
 
           return { properties: state.properties.map(p => p.id === id ? updated : p) }; 

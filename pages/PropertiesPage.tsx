@@ -516,7 +516,6 @@ export const PropertiesPage: React.FC = () => {
             </Button>
         </div>
 
-        {/* ... (Search & Filter UI remains same) ... */}
         {/* Search & Main Controls */}
         <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
@@ -691,8 +690,7 @@ export const PropertiesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Select All Bar & Content ... (Same as before) ... */}
-      {/* ... */}
+      {/* Select All Bar & Content */}
       {filteredProperties.length > 0 ? (
           <>
             <div className="flex items-center gap-3 py-2 px-1">
@@ -800,7 +798,7 @@ export const PropertiesPage: React.FC = () => {
             </div>
           </>
       ) : (
-          /* Empty State */
+          /* Empty State as requested */
           <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-6">
                   <Building2 size={48} className="text-slate-300" />
@@ -1054,7 +1052,13 @@ export const PropertiesPage: React.FC = () => {
                     )}
 
                     <div className="flex justify-between gap-3 pt-4 border-t items-center">
-                        <label className="flex items-center gap-3 cursor-pointer group">
+                        <label className="flex items-center gap-3 cursor-pointer group relative select-none">
+                            <input 
+                                type="checkbox" 
+                                className="sr-only" 
+                                checked={publishOnSite} 
+                                onChange={(e) => setPublishOnSite(e.target.checked)} 
+                            />
                             <div className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${publishOnSite ? 'bg-green-500' : 'bg-slate-200'}`}>
                                 <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${publishOnSite ? 'translate-x-6' : 'translate-x-0'}`}></div>
                             </div>
