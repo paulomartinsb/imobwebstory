@@ -126,8 +126,8 @@ export const useStore = create<AppState>()(
           geminiApiKey: getEnv('VITE_GEMINI_API_KEY') || '',
           supabaseUrl: getEnv('VITE_SUPABASE_URL') || 'https://sqbipjfbevtmcvmgvpbj.supabase.co',
           supabaseAnonKey: getEnv('VITE_SUPABASE_ANON_KEY') || 'sb_publishable_tH5TSU40ykxLckoOvRmxjg_Si20eMfN',
-          // New N8N Config
-          n8nWebhookUrl: '',
+          // Pre-configured Webhook for Automator
+          n8nWebhookUrl: 'https://imoveis.webstory.com.br/wp-json/uap/v2/uap-28-29',
           leadAging: { freshLimit: 2, warmLimit: 7, freshColor: 'green', warmColor: 'yellow', coldColor: 'red' },
           teamPerformance: { minProperties: 1, minLeads: 5, minVisits: 2, activeLabel: 'Ativo', warningLabel: 'Baixa Atividade', inactiveLabel: 'Sem Produção - Cobrar' },
           smtpConfig: { host: 'smtp.gmail.com', port: 587, user: '', pass: '', secure: false, fromName: 'Sistema WebImob', enabled: false },
@@ -285,9 +285,15 @@ export const useStore = create<AppState>()(
           
           syncToCloud(state.systemSettings, 'properties', updated); 
           
-          // Trigger Webhook if property is visible/published (update site)
-          if (old.status === 'published') {
-              triggerIntegrationWebhook(state.systemSettings.n8nWebhookUrl, 'update', updated);
+          // CRITICAL WEBHOOK UPDATE:
+          // Trigger if it IS published (updates the live site)
+          // OR if it WAS published but now isn't (updates site to remove/draft it)
+          const isPublished = updated.status === 'published';
+          const wasPublished = old.status === 'published';
+
+          if (isPublished || wasPublished) {
+              const eventType = isPublished ? 'update' : 'status_change'; 
+              triggerIntegrationWebhook(state.systemSettings.n8nWebhookUrl, eventType, updated);
           }
 
           return { properties: state.properties.map(p => p.id === id ? updated : p) }; 

@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useStore } from '../store';
 import { Card, Button, Input, Badge, PhoneInput } from '../components/ui/Elements';
-import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Check, Eye, Filter, RotateCcw, Edit3, MessageSquareWarning, ThumbsDown, AlertCircle, Loader2, SortAsc, Building2, Lightbulb, Car, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History, User, Mic, MicOff, StopCircle } from 'lucide-react';
-import { generatePropertyDescription, parsePropertyVoiceCommand } from '../services/geminiService';
+import { Plus, Search, MapPin, Bed, Bath, Ruler, Sparkles, X, Filter, Edit3, ThumbsDown, AlertCircle, SortAsc, Building2, ChevronDown, ChevronUp, Image as ImageIcon, Trash2, GripHorizontal, History, User, Globe } from 'lucide-react';
+import { generatePropertyDescription } from '../services/geminiService';
 import { searchCep } from '../services/viaCep';
 import { Property, PropertyType, PropertyStatus } from '../types';
 import { PropertyDetailModal } from '../components/PropertyDetailModal';
@@ -44,12 +44,6 @@ export const PropertiesPage: React.FC = () => {
   // Bulk Selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Voice Assistant State
-  const [isRecording, setIsRecording] = useState(false);
-  const [isProcessingAudio, setIsProcessingAudio] = useState(false);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-
   // Permissions Check
   const isBroker = currentUser?.role === 'broker' || currentUser?.role === 'captator';
   const isStaff = ['admin', 'finance', 'employee'].includes(currentUser?.role || '');
@@ -57,6 +51,7 @@ export const PropertiesPage: React.FC = () => {
 
   // Form State for New/Edit Property
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [publishOnSite, setPublishOnSite] = useState(false); // Toggle State
   const [formData, setFormData] = useState<Partial<Property>>({
     type: 'apartamento',
     features: [],
@@ -91,72 +86,6 @@ export const PropertiesPage: React.FC = () => {
       const cities = new Set(properties.map(p => p.city).filter(Boolean));
       return Array.from(cities).sort();
   }, [properties]);
-
-  // --- Voice Logic ---
-  const startRecording = async () => {
-      try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          const mediaRecorder = new MediaRecorder(stream);
-          mediaRecorderRef.current = mediaRecorder;
-          audioChunksRef.current = [];
-
-          mediaRecorder.ondataavailable = (event) => {
-              if (event.data.size > 0) {
-                  audioChunksRef.current.push(event.data);
-              }
-          };
-
-          mediaRecorder.onstop = handleAudioStop;
-          mediaRecorder.start();
-          setIsRecording(true);
-      } catch (err) {
-          console.error("Error accessing microphone:", err);
-          addNotification('error', 'Erro ao acessar microfone. Verifique as permissões.');
-      }
-  };
-
-  const stopRecording = () => {
-      if (mediaRecorderRef.current && isRecording) {
-          mediaRecorderRef.current.stop();
-          mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop()); // Stop stream
-          setIsRecording(false);
-          setIsProcessingAudio(true);
-      }
-  };
-
-  const handleAudioStop = async () => {
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      const reader = new FileReader();
-      
-      reader.onloadend = async () => {
-          const base64Audio = (reader.result as string).split(',')[1];
-          
-          try {
-              const result = await parsePropertyVoiceCommand(base64Audio, formData);
-              
-              if (result.fields) {
-                  setFormData(prev => ({ ...prev, ...result.fields }));
-              }
-
-              if (result.question) {
-                  // Speak the question
-                  const utterance = new SpeechSynthesisUtterance(result.question);
-                  utterance.lang = 'pt-BR';
-                  window.speechSynthesis.speak(utterance);
-                  addNotification('info', `IA: ${result.question}`);
-              } else {
-                  addNotification('success', 'Dados preenchidos por voz.');
-              }
-
-          } catch (e) {
-              addNotification('error', 'Erro ao processar áudio.');
-          } finally {
-              setIsProcessingAudio(false);
-          }
-      };
-      
-      reader.readAsDataURL(audioBlob);
-  };
 
   // --- Filter Logic ---
 
@@ -426,6 +355,7 @@ export const PropertiesPage: React.FC = () => {
 
   const handleOpenEdit = (property: Property) => {
       setEditingId(property.id);
+      setPublishOnSite(property.status === 'published');
       setFormData({
           title: property.title,
           type: property.type,
@@ -506,30 +436,57 @@ export const PropertiesPage: React.FC = () => {
 
     const submissionData = { ...formData, address: fullAddress, images: finalImages };
 
+    // Handle Publish Toggle Logic
+    let newStatus = 'draft';
+    if (publishOnSite) {
+        // Only Admins/Staff can directly publish. Brokers go to pending if approval is required.
+        if (isStaff || !systemSettings.requirePropertyApproval) {
+            newStatus = 'published';
+        } else {
+            newStatus = 'pending_approval';
+        }
+    } else {
+        // If unchecked, it goes to draft (removed from site)
+        newStatus = 'draft'; 
+    }
+
     if (editingId) {
         const updates: any = { ...submissionData };
-        if (isBroker) {
-            updates.status = 'pending_approval';
-            updates.approvedBy = undefined;
-            updates.rejectionReason = undefined;
-            addNotification('info', 'Alterações enviadas para aprovação.');
+        
+        // Only update status if specifically toggled, or force re-approval logic if changed by broker
+        if (publishOnSite) {
+             if (isBroker && systemSettings.requirePropertyApproval) {
+                 updates.status = 'pending_approval';
+                 updates.approvedBy = undefined;
+                 addNotification('info', 'Enviado para aprovação.');
+             } else {
+                 updates.status = 'published';
+             }
+        } else {
+            updates.status = 'draft';
         }
+
         updateProperty(editingId, updates);
     } else {
         const propertyPayload = {
             code: `IMOB-${Math.floor(Math.random() * 1000)}`,
-            ...submissionData as any
+            ...submissionData as any,
+            status: newStatus
         };
         addProperty(propertyPayload);
+        if(newStatus === 'pending_approval') addNotification('info', 'Imóvel cadastrado e aguardando aprovação.');
+        else if(newStatus === 'published') addNotification('success', 'Imóvel publicado no site!');
     }
     
     setIsModalOpen(false);
     setEditingId(null);
+    setPublishOnSite(false);
     setFormData({ type: 'apartamento', features: [], title: '', address: '', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', area: 0, price: 0, bedrooms: 0, bathrooms: 0, description: '', images: [], ownerName: '', ownerPhone: '' });
   };
 
   const openNewPropertyModal = () => {
       setEditingId(null);
+      setPublishOnSite(false); // Default to not published
       setFormData({ type: 'apartamento', features: [], title: '', address: '', zipCode: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '', area: 0, price: 0, bedrooms: 0, bathrooms: 0, description: '', images: [], ownerName: '', ownerPhone: '' });
       setIsModalOpen(true);
   }
@@ -559,6 +516,7 @@ export const PropertiesPage: React.FC = () => {
             </Button>
         </div>
 
+        {/* ... (Search & Filter UI remains same) ... */}
         {/* Search & Main Controls */}
         <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
@@ -733,7 +691,8 @@ export const PropertiesPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Select All Bar & Content */}
+      {/* Select All Bar & Content ... (Same as before) ... */}
+      {/* ... */}
       {filteredProperties.length > 0 ? (
           <>
             <div className="flex items-center gap-3 py-2 px-1">
@@ -841,7 +800,7 @@ export const PropertiesPage: React.FC = () => {
             </div>
           </>
       ) : (
-          /* Empty State as requested */
+          /* Empty State */
           <div className="flex flex-col items-center justify-center py-20 text-center">
               <div className="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-6">
                   <Building2 size={48} className="text-slate-300" />
@@ -904,35 +863,9 @@ export const PropertiesPage: React.FC = () => {
                 <div className="p-6 border-b border-slate-100 flex justify-between items-center sticky top-0 bg-white z-10">
                     <h2 className="text-xl font-bold text-slate-800">{editingId ? 'Editar Imóvel' : 'Cadastrar Novo Imóvel'}</h2>
                     
-                    <div className="flex items-center gap-2">
-                        {/* Voice Assistant Toggle */}
-                        <div className="flex items-center gap-2 mr-4 bg-slate-50 border border-slate-200 rounded-full px-1.5 py-1.5">
-                            {isRecording ? (
-                                <button 
-                                    onClick={stopRecording} 
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors animate-pulse"
-                                >
-                                    <StopCircle size={16} /> Parar e Processar
-                                </button>
-                            ) : isProcessingAudio ? (
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-full">
-                                    <Loader2 size={16} className="animate-spin" /> Pensando...
-                                </div>
-                            ) : (
-                                <button 
-                                    onClick={startRecording}
-                                    className="flex items-center gap-2 px-3 py-1.5 bg-white text-slate-600 hover:text-primary-600 hover:bg-primary-50 rounded-full transition-all text-xs font-medium border border-transparent hover:border-primary-100"
-                                    title="Preencher por Voz"
-                                >
-                                    <Mic size={16} /> Assistente de Voz
-                                </button>
-                            )}
-                        </div>
-
-                        <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
-                            <X size={24} />
-                        </button>
-                    </div>
+                    <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600">
+                        <X size={24} />
+                    </button>
                 </div>
                 
                 <form onSubmit={handleSubmit} className="p-6 space-y-6">
@@ -1120,9 +1053,23 @@ export const PropertiesPage: React.FC = () => {
                         </div>
                     )}
 
-                    <div className="flex justify-end gap-3 pt-4 border-t">
-                        <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
-                        <Button type="submit">{editingId ? 'Salvar' : 'Cadastrar'}</Button>
+                    <div className="flex justify-between gap-3 pt-4 border-t items-center">
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                            <div className={`w-12 h-6 rounded-full p-1 transition-colors duration-200 ease-in-out ${publishOnSite ? 'bg-green-500' : 'bg-slate-200'}`}>
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out ${publishOnSite ? 'translate-x-6' : 'translate-x-0'}`}></div>
+                            </div>
+                            <span className={`text-sm font-medium transition-colors ${publishOnSite ? 'text-green-700' : 'text-slate-500'}`}>
+                                {publishOnSite ? 'Publicar no Site' : 'Rascunho / Oculto'}
+                            </span>
+                            <div className="hidden group-hover:block absolute bg-slate-800 text-white text-xs px-2 py-1 rounded -mt-8 ml-10">
+                                Sincroniza com Webhook
+                            </div>
+                        </label>
+
+                        <div className="flex gap-2">
+                            <Button type="button" variant="outline" onClick={() => setIsModalOpen(false)}>Cancelar</Button>
+                            <Button type="submit">{editingId ? 'Salvar' : 'Cadastrar'}</Button>
+                        </div>
                     </div>
                 </form>
             </div>
