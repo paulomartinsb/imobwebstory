@@ -67,6 +67,9 @@ export interface SystemSettings {
   geminiApiKey: string;
   supabaseUrl: string;
   supabaseAnonKey: string;
+  
+  // Integração Externa
+  n8nWebhookUrl?: string; // URL do Webhook do n8n
 
   matchAiPrompt: string;
   crmGlobalInsightsPrompt: string;

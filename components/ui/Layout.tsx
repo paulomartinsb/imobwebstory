@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus, Send, HelpCircle } from 'lucide-react';
+import { LayoutDashboard, Building2, Users, FileText, Settings, LogOut, Menu, X, ShieldCheck, UserPlus, Send, HelpCircle, Wifi, WifiOff } from 'lucide-react';
 import { ToastContainer } from './Toast';
 import { useStore } from '../../store';
 
@@ -27,7 +27,7 @@ const SidebarItem = ({ to, icon: Icon, label, onClick }: any) => {
 
 export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { addNotification, currentUser, logout } = useStore();
+  const { addNotification, currentUser, logout, realtimeStatus } = useStore();
   const location = useLocation();
 
   // Fecha a sidebar ao mudar de rota (útil para mobile)
@@ -163,6 +163,16 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
                 </div>
             </div>
             <div className="flex items-center gap-4">
+                {/* Realtime Status Indicator */}
+                <div className={`hidden md:flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded transition-colors ${
+                    realtimeStatus === 'CONNECTED' ? 'bg-green-50 text-green-700 border border-green-200' : 
+                    realtimeStatus === 'CONNECTING' ? 'bg-yellow-50 text-yellow-700 border border-yellow-200' :
+                    'bg-slate-100 text-slate-500 border border-slate-200'
+                }`}>
+                    {realtimeStatus === 'CONNECTED' ? <Wifi size={14} /> : <WifiOff size={14} />}
+                    {realtimeStatus === 'CONNECTED' ? 'Online' : realtimeStatus === 'CONNECTING' ? 'Conectando...' : 'Offline'}
+                </div>
+
                 <span className="hidden md:inline text-sm text-slate-500">v1.3.1 (Security Update)</span>
                 <div className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-slate-200 border-2 border-white shadow-sm overflow-hidden">
                     <img src={currentUser?.avatar} alt="Avatar" className="w-full h-full object-cover" />

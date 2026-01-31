@@ -11,8 +11,8 @@ const getAI = () => {
     // Safety check for env var in case store is empty but env is present (first load)
     if (!apiKey) {
         try {
-            // @ts-ignore
-            apiKey = import.meta.env?.VITE_GEMINI_API_KEY;
+            // FIX: Cast import.meta to any to avoid TS error
+            apiKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
         } catch(e) {}
     }
     

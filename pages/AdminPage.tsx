@@ -1,14 +1,12 @@
-// ... imports
-import React, { useState } from 'react';
-import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT, DEFAULT_PROPERTY_TYPES, DEFAULT_FEATURES, DEFAULT_LEAD_SOURCES, DEFAULT_LOCATIONS } from '../store';
+import React, { useState, useEffect } from 'react';
+import { useStore, DEFAULT_DESC_PROMPT, DEFAULT_MATCH_PROMPT, DEFAULT_CRM_GLOBAL_PROMPT, DEFAULT_CRM_CARD_PROMPT } from '../store';
 import { DEFAULT_EMAIL_TEMPLATES } from '../services/emailService';
 import { Card, Button, Input, Badge } from '../components/ui/Elements';
-import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Server, UploadCloud, DownloadCloud, Edit3, Activity, Target, Mail, Send, FileEdit, Info } from 'lucide-react';
+import { Users, Shield, Settings, Save, AlertTriangle, FileText, RotateCcw, Eye, Search, Building2, Plus, Trash2, X, Megaphone, MapPin, Sparkles, Clock, Key, Database, RefreshCcw, Code, UserPlus, Lock, Unlock, Ban, CheckCircle, Activity, Target, Mail, Send, Link, Edit3 } from 'lucide-react';
 import { Navigate } from 'react-router-dom';
 import { UserRole, LogEntry, User, SmtpConfig, EmailTemplatesConfig } from '../types';
-import { syncEntityToSupabase } from '../services/supabaseClient';
+import { sendSystemEmail } from '../services/emailService';
 
-// ... (Keep JsonDiffViewer and StringListManager components as is) ...
 const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }) => {
     const allKeys = Array.from(new Set([...Object.keys(before || {}), ...Object.keys(after || {})]));
     
@@ -51,7 +49,6 @@ const JsonDiffViewer: React.FC<{ before: any, after: any }> = ({ before, after }
     )
 }
 
-// Reusable List Manager Component
 const StringListManager: React.FC<{ 
     title: string; 
     description: string; 
@@ -103,9 +100,8 @@ const StringListManager: React.FC<{
 };
 
 export const AdminPage: React.FC = () => {
-  // ... (State declarations same as original, no changes needed in hooks)
-  const { currentUser, users, updateUserRole, updateUser, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, properties, clients, pipelines, addNotification, loadFromSupabase, sendTestEmail } = useStore();
-  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs' | 'database'>('users');
+  const { currentUser, users, updateUser, addUser, removeUser, toggleUserBlock, systemSettings, updateSystemSettings, logs, restoreState, addNotification, sendTestEmail } = useStore();
+  const [activeTab, setActiveTab] = useState<'users' | 'system' | 'properties' | 'crm' | 'logs'>('users');
   
   const [settingsForm, setSettingsForm] = useState(systemSettings);
   const [logSearch, setLogSearch] = useState('');
@@ -117,9 +113,6 @@ export const AdminPage: React.FC = () => {
   const [isEditUserOpen, setIsEditUserOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [editPassword, setEditPassword] = useState('');
-
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [syncLog, setSyncLog] = useState<string[]>([]);
 
   const [testEmail, setTestEmail] = useState(currentUser?.email || '');
   const [isTestingSmtp, setIsTestingSmtp] = useState(false);
@@ -135,41 +128,18 @@ export const AdminPage: React.FC = () => {
   });
   const [activeCrmPromptTab, setActiveCrmPromptTab] = useState<'match' | 'global' | 'card'>('match');
 
-  const [agingConfig, setAgingConfig] = useState(systemSettings.leadAging || {
-      freshLimit: 2,
-      warmLimit: 7,
-      freshColor: 'green',
-      warmColor: 'yellow',
-      coldColor: 'red'
-  });
-
-  const [teamPerfConfig, setTeamPerfConfig] = useState(systemSettings.teamPerformance || {
-      minProperties: 1,
-      minLeads: 5,
-      minVisits: 2,
-      activeLabel: 'Ativo',
-      warningLabel: 'Baixa Atividade',
-      inactiveLabel: 'Sem Produção - Cobrar'
-  });
-
-  const [activeTemplate, setActiveTemplate] = useState<'propertyApproved' | 'propertyRejected' | 'leadAssigned'>('propertyApproved');
-  const [templates, setTemplates] = useState<EmailTemplatesConfig>(systemSettings.emailTemplates || DEFAULT_EMAIL_TEMPLATES);
-
   if (currentUser?.role !== 'admin') {
       return <Navigate to="/" replace />;
   }
 
-  // ... (Keep all handler functions same until handleTestSmtp) ...
   const handleSettingsSave = () => {
-      const newSettings = {
-          ...settingsForm,
-          emailTemplates: templates
-      };
-      updateSystemSettings(newSettings);
+      updateSystemSettings(settingsForm);
+      addNotification('success', 'Configurações salvas.');
   };
   
   const handlePromptSave = () => {
       updateSystemSettings({ propertyDescriptionPrompt: promptText });
+      addNotification('success', 'Prompt de descrição salvo.');
   };
 
   const handleCrmPromptsSave = () => {
@@ -178,14 +148,7 @@ export const AdminPage: React.FC = () => {
           crmGlobalInsightsPrompt: crmPrompts.crmGlobal,
           crmCardInsightsPrompt: crmPrompts.crmCard
       });
-  };
-
-  const handleAgingSave = () => {
-      updateSystemSettings({ leadAging: agingConfig });
-  };
-
-  const handleTeamPerfSave = () => {
-      updateSystemSettings({ teamPerformance: teamPerfConfig });
+      addNotification('success', 'Prompts do CRM salvos.');
   };
 
   const updateSmtp = (updates: Partial<SmtpConfig>) => {
@@ -207,17 +170,20 @@ export const AdminPage: React.FC = () => {
           return;
       }
       setIsTestingSmtp(true);
-      const success = await sendTestEmail(testEmail, settingsForm.smtpConfig);
+      const success = await sendTestEmail({
+          to: testEmail, 
+          subject: 'Teste de SMTP - WebImob',
+          body: 'Se você recebeu este email, sua configuração SMTP está correta.'
+      }, settingsForm.smtpConfig);
       setIsTestingSmtp(false);
       
       if(success) {
-          addNotification('success', 'Simulação de envio realizada! Verifique o console do navegador (F12) para ver o log do disparo.');
+          addNotification('success', 'Email de teste enviado (Simulado). Verifique o console.');
       } else {
-          addNotification('error', 'Falha ao simular envio.');
+          addNotification('error', 'Falha ao enviar email.');
       }
   }
 
-  // ... (Rest of handlers: handleAddUser, openEditUser, etc. keep same) ...
   const handleAddUser = () => {
       if(!newUser.name || !newUser.email) {
           addNotification('error', 'Nome e email são obrigatórios.');
@@ -227,6 +193,9 @@ export const AdminPage: React.FC = () => {
       if (success) {
           setIsAddUserOpen(false);
           setNewUser({ name: '', email: '', role: 'employee' });
+          addNotification('success', 'Usuário adicionado.');
+      } else {
+          addNotification('error', 'Email já cadastrado.');
       }
   };
 
@@ -250,17 +219,15 @@ export const AdminPage: React.FC = () => {
       setIsEditUserOpen(false);
       setEditingUser(null);
       setEditPassword('');
+      addNotification('success', 'Usuário atualizado.');
   }
 
   const handleRemoveUser = (id: string) => {
       if(window.confirm('Tem certeza que deseja remover este usuário?')) {
           removeUser(id);
+          addNotification('success', 'Usuário removido.');
       }
   };
-
-  const handleToggleBlock = (id: string) => {
-      toggleUserBlock(id);
-  }
 
   const addPropertyType = () => {
       if(!newTypeLabel.trim()) return;
@@ -273,7 +240,7 @@ export const AdminPage: React.FC = () => {
   }
 
   const removePropertyType = (val: string) => {
-      if(window.confirm('Remover este tipo de imóvel? Imóveis existentes manterão o valor antigo.')) {
+      if(window.confirm('Remover este tipo de imóvel?')) {
           const updatedTypes = systemSettings.propertyTypes.filter(t => t.value !== val);
           updateSystemSettings({ propertyTypes: updatedTypes });
       }
@@ -287,7 +254,7 @@ export const AdminPage: React.FC = () => {
   }
 
   const removeFeature = (feat: string) => {
-       if(window.confirm('Remover este diferencial da lista?')) {
+       if(window.confirm('Remover este diferencial?')) {
           const updatedFeatures = systemSettings.propertyFeatures.filter(f => f !== feat);
           updateSystemSettings({ propertyFeatures: updatedFeatures });
       }
@@ -299,7 +266,7 @@ export const AdminPage: React.FC = () => {
   }
 
   const removeLeadSource = (val: string) => {
-      if(window.confirm('Remover esta origem? Leads existentes não serão alterados.')) {
+      if(window.confirm('Remover esta origem?')) {
           updateSystemSettings({ leadSources: systemSettings.leadSources.filter(s => s !== val) });
       }
   }
@@ -310,1209 +277,537 @@ export const AdminPage: React.FC = () => {
   }
 
   const removeLocation = (val: string) => {
-      if(window.confirm('Remover esta localização da lista de sugestões?')) {
+      if(window.confirm('Remover esta localização?')) {
           updateSystemSettings({ availableLocations: systemSettings.availableLocations.filter(l => l !== val) });
       }
   }
 
-  const handleSeedDatabase = async () => {
-      if (!window.confirm("ATENÇÃO: Isso enviará TODOS os dados locais para o banco. Continuar?")) return;
-      const url = systemSettings.supabaseUrl;
-      const key = systemSettings.supabaseAnonKey;
-      if (!url || !key) { addNotification('error', 'Configure as credenciais primeiro.'); return; }
-      setIsSyncing(true);
-      setSyncLog(['Iniciando backup completo...']);
-      let successCount = 0; let errorCount = 0;
-      const syncList = async (list: any[], tableName: string, label: string) => {
-          setSyncLog(prev => [...prev, `Sincronizando ${label}... (${list.length} itens)`]);
-          for (const item of list) {
-              const res = await syncEntityToSupabase(tableName, item, url, key);
-              if (res.error) { setSyncLog(prev => [...prev, `[ERRO] ${label} ID ${item.id}: ${JSON.stringify(res.error)}`]); errorCount++; } else { successCount++; }
-          }
-      };
-      await syncList(users, 'users', 'Usuários');
-      await syncList(pipelines, 'pipelines', 'Pipelines');
-      await syncList(properties, 'properties', 'Imóveis');
-      await syncList(clients, 'clients', 'Clientes');
-      await syncList(logs, 'logs', 'Logs');
-      await syncEntityToSupabase('system_settings', { id: 'global-settings', ...systemSettings }, url, key);
-      setIsSyncing(false);
-      if(errorCount === 0) addNotification('success', 'Backup realizado!');
-      else addNotification('info', 'Backup concluído com alertas.');
-  };
+  const filteredLogs = logs.filter(l => 
+      l.details.toLowerCase().includes(logSearch.toLowerCase()) || 
+      l.userName.toLowerCase().includes(logSearch.toLowerCase()) ||
+      l.entityName.toLowerCase().includes(logSearch.toLowerCase())
+  ).sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  const handlePullDatabase = async () => {
-      if(!window.confirm("Isso irá SUBSTITUIR os dados locais. Continuar?")) return;
-      setIsSyncing(true);
-      await loadFromSupabase();
-      setIsSyncing(false);
-      addNotification('success', 'Dados sincronizados.');
-  };
-
-  const copySqlSchema = () => {
-      const sql = `-- Copied SQL`; 
-      navigator.clipboard.writeText(sql);
-      addNotification('success', 'SQL Copiado!');
-  };
-
-  const roleOptions: { value: UserRole; label: string }[] = [
-      { value: 'admin', label: 'Administrador' },
-      { value: 'finance', label: 'Financeiro' },
-      { value: 'employee', label: 'Funcionário' },
-      { value: 'broker', label: 'Corretor' },
-      { value: 'captator', label: 'Captador (Parceiro)' },
-  ];
-
-  const colorOptions = [
-      { value: 'green', label: 'Verde (Green)' },
-      { value: 'yellow', label: 'Amarelo (Yellow)' },
-      { value: 'red', label: 'Vermelho (Red)' },
-      { value: 'blue', label: 'Azul (Blue)' },
-      { value: 'purple', label: 'Roxo (Purple)' },
-      { value: 'gray', label: 'Cinza (Gray)' },
-      { value: 'orange', label: 'Laranja (Orange)' },
-  ];
-
-  const getColorClass = (colorName: string) => {
-      const map: Record<string, string> = {
-          'green': 'bg-green-100 text-green-700 border-green-200',
-          'yellow': 'bg-yellow-100 text-yellow-700 border-yellow-200',
-          'red': 'bg-red-100 text-red-700 border-red-200',
-          'blue': 'bg-blue-100 text-blue-700 border-blue-200',
-          'purple': 'bg-purple-100 text-purple-700 border-purple-200',
-          'gray': 'bg-slate-100 text-slate-700 border-slate-200',
-          'orange': 'bg-orange-100 text-orange-700 border-orange-200',
-      };
-      return map[colorName] || map['gray'];
-  }
-
-  const filteredLogs = logs.filter(log => 
-      log.entityName.toLowerCase().includes(logSearch.toLowerCase()) || 
-      log.userName.toLowerCase().includes(logSearch.toLowerCase()) ||
-      log.details.toLowerCase().includes(logSearch.toLowerCase())
-  );
-
-  const getActionBadge = (action: string) => {
-      switch(action) {
-          case 'create': return <Badge color="green">Criação</Badge>;
-          case 'update': return <Badge color="blue">Edição</Badge>;
-          case 'delete': return <Badge color="red">Exclusão</Badge>;
-          case 'restore': return <Badge color="yellow">Restauração</Badge>;
-          case 'approval': return <Badge color="green">Aprovação</Badge>;
-          default: return <Badge color="gray">{action}</Badge>;
-      }
-  }
-
-  const getTemplateVars = (type: string) => {
-      switch(type) {
-          case 'propertyApproved': return ['{{ownerName}}', '{{propertyTitle}}', '{{propertyCode}}'];
-          case 'propertyRejected': return ['{{ownerName}}', '{{propertyTitle}}', '{{propertyCode}}', '{{reason}}'];
-          case 'leadAssigned': return ['{{ownerName}}', '{{clientName}}', '{{clientPhone}}'];
-          default: return [];
-      }
-  }
-
-  // ... (JSX Return) ...
   return (
     <div className="space-y-6">
-      <div className="mb-6">
-            <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                <Shield className="text-primary-600" />
-                Painel Administrativo
-            </h1>
-            <p className="text-slate-500">Gerenciamento global, permissões e auditoria.</p>
-      </div>
+        <div className="flex justify-between items-center">
+            <div>
+                <h1 className="text-2xl font-bold text-slate-800">Administração</h1>
+                <p className="text-slate-500">Controle total do sistema e configurações globais.</p>
+            </div>
+        </div>
 
-      {/* Tabs */}
-      <div className="flex gap-4 border-b border-slate-200 overflow-x-auto">
-          {/* ... Tabs kept as is ... */}
-          <button onClick={() => setActiveTab('users')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'users' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><Users size={18} /> Usuários</div>
-          </button>
-          <button onClick={() => setActiveTab('system')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'system' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><Settings size={18} /> Sistema</div>
-          </button>
-          <button onClick={() => setActiveTab('database')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'database' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><Database size={18} /> Banco de Dados</div>
-          </button>
-           <button onClick={() => setActiveTab('properties')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'properties' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><Building2 size={18} /> Imóveis</div>
-          </button>
-          <button onClick={() => setActiveTab('crm')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'crm' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><Megaphone size={18} /> CRM</div>
-          </button>
-          <button onClick={() => setActiveTab('logs')} className={`pb-3 px-4 text-sm font-medium transition-colors border-b-2 whitespace-nowrap ${activeTab === 'logs' ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}>
-              <div className="flex items-center gap-2"><FileText size={18} /> Logs de Auditoria</div>
-          </button>
-      </div>
+        <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-1">
+            {[
+                { id: 'users', label: 'Usuários', icon: Users },
+                { id: 'system', label: 'Configurações do Sistema', icon: Settings },
+                { id: 'properties', label: 'Listas e Tipos', icon: Building2 },
+                { id: 'crm', label: 'IA e CRM', icon: Megaphone },
+                { id: 'logs', label: 'Auditoria (Logs)', icon: Shield },
+            ].map(tab => (
+                <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center gap-2 px-4 py-2.5 rounded-t-lg font-medium transition-colors text-sm ${activeTab === tab.id ? 'bg-white border-x border-t border-slate-200 text-primary-600 -mb-px relative z-10' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+                >
+                    <tab.icon size={16} />
+                    {tab.label}
+                </button>
+            ))}
+        </div>
 
-      {activeTab === 'users' && (
-          // ... Users Tab Content (No change) ...
-          <div className="space-y-6">
-              <Card className="overflow-hidden">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-                      <div>
-                          <h2 className="text-lg font-semibold text-slate-800">Controle de Acesso (RBAC)</h2>
-                          <p className="text-sm text-slate-500">Gerencie usuários e suas permissões.</p>
-                      </div>
-                      <Button onClick={() => setIsAddUserOpen(true)}>
-                          <UserPlus size={18} className="mr-2" /> Novo Usuário
-                      </Button>
-                  </div>
-                  <div className="overflow-x-auto">
-                      <table className="w-full text-left text-sm text-slate-600">
-                          <thead className="bg-slate-50 text-slate-800 font-semibold uppercase text-xs">
-                              <tr>
-                                  <th className="px-6 py-4">Usuário</th>
-                                  <th className="px-6 py-4">Email</th>
-                                  <th className="px-6 py-4">Nível de Permissão Atual</th>
-                                  <th className="px-6 py-4 text-right">Ação</th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                              {users.map(user => (
-                                  <tr key={user.id} className={`hover:bg-slate-50 transition-colors ${user.blocked ? 'bg-red-50/50' : ''}`}>
-                                      <td className="px-6 py-4 flex items-center gap-3">
-                                          <img src={user.avatar} className={`w-8 h-8 rounded-full ${user.blocked ? 'grayscale opacity-50' : ''}`} alt="" />
-                                          <div>
-                                              <span className={`font-medium block ${user.blocked ? 'text-red-700 line-through' : ''}`}>{user.name}</span>
-                                              {user.blocked && <span className="text-[10px] text-red-600 font-bold uppercase">Acesso Bloqueado</span>}
-                                          </div>
-                                          {currentUser.id === user.id && <Badge color="blue">Você</Badge>}
-                                      </td>
-                                      <td className="px-6 py-4">{user.email}</td>
-                                      <td className="px-6 py-4">
-                                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize
-                                            ${user.role === 'admin' ? 'bg-purple-50 text-purple-700 border-purple-200' : 
-                                              user.role === 'broker' ? 'bg-amber-50 text-amber-700 border-amber-200' : 
-                                              'bg-slate-50 text-slate-700 border-slate-200'}
-                                          `}>
-                                              {user.role === 'captator' ? 'Captador' : user.role}
-                                          </span>
-                                      </td>
-                                      <td className="px-6 py-4 flex justify-end gap-2">
-                                          <button 
-                                            onClick={() => openEditUser(user)}
-                                            className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 rounded transition-colors"
-                                            title="Editar Informações"
-                                          >
-                                              <Edit3 size={18} />
-                                          </button>
+        <div className="min-h-[500px]">
+            {/* USERS TAB */}
+            {activeTab === 'users' && (
+                <div className="space-y-6">
+                    <div className="flex justify-end">
+                        <Button onClick={() => setIsAddUserOpen(true)}>
+                            <UserPlus size={18} /> Adicionar Usuário
+                        </Button>
+                    </div>
+                    <Card className="overflow-hidden">
+                        <table className="w-full text-left text-sm text-slate-600">
+                            <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
+                                <tr>
+                                    <th className="px-6 py-4">Usuário</th>
+                                    <th className="px-6 py-4">Email</th>
+                                    <th className="px-6 py-4">Função</th>
+                                    <th className="px-6 py-4">Status</th>
+                                    <th className="px-6 py-4 text-right">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                                {users.map(u => (
+                                    <tr key={u.id} className="hover:bg-slate-50">
+                                        <td className="px-6 py-4 flex items-center gap-3">
+                                            <img src={u.avatar} className="w-8 h-8 rounded-full bg-slate-200" alt="" />
+                                            <span className="font-medium text-slate-800">{u.name}</span>
+                                        </td>
+                                        <td className="px-6 py-4">{u.email}</td>
+                                        <td className="px-6 py-4 capitalize">{u.role}</td>
+                                        <td className="px-6 py-4">
+                                            {u.blocked ? (
+                                                <Badge color="red">Bloqueado</Badge>
+                                            ) : (
+                                                <Badge color="green">Ativo</Badge>
+                                            )}
+                                        </td>
+                                        <td className="px-6 py-4 text-right flex justify-end gap-2">
+                                            <button onClick={() => toggleUserBlock(u.id)} className="p-2 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded" title={u.blocked ? "Desbloquear" : "Bloquear"}>
+                                                {u.blocked ? <Unlock size={18}/> : <Ban size={18}/>}
+                                            </button>
+                                            <button onClick={() => openEditUser(u)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Editar">
+                                                <Edit3 size={18}/>
+                                            </button>
+                                            <button onClick={() => handleRemoveUser(u.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" title="Remover">
+                                                <Trash2 size={18}/>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </Card>
+                </div>
+            )}
 
-                                          {user.id !== currentUser.id && (
-                                              <>
-                                                  <button 
-                                                    onClick={() => handleToggleBlock(user.id)}
-                                                    className={`p-2 rounded transition-colors ${user.blocked ? 'text-green-500 hover:bg-green-50' : 'text-orange-400 hover:bg-orange-50'}`}
-                                                    title={user.blocked ? "Desbloquear Acesso" : "Bloquear Acesso"}
-                                                  >
-                                                      {user.blocked ? <Unlock size={18} /> : <Lock size={18} />}
-                                                  </button>
-                                                  <button 
-                                                    onClick={() => handleRemoveUser(user.id)}
-                                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
-                                                    title="Remover Usuário"
-                                                  >
-                                                      <Trash2 size={18} />
-                                                  </button>
-                                              </>
-                                          )}
-                                      </td>
-                                  </tr>
-                              ))}
-                          </tbody>
-                      </table>
-                  </div>
-              </Card>
-          </div>
-      )}
-
-      {/* Add/Edit User Modals ... (Keep same) ... */}
-      {isAddUserOpen && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                      <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                          <UserPlus size={20} className="text-primary-600"/> Novo Usuário
-                      </h2>
-                      <button onClick={() => setIsAddUserOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                      <Input 
-                        label="Nome" 
-                        placeholder="Ex: Maria Silva" 
-                        value={newUser.name}
-                        onChange={e => setNewUser({...newUser, name: e.target.value})}
-                      />
-                      <Input 
-                        label="Email" 
-                        type="email" 
-                        placeholder="Ex: maria@imob.com" 
-                        value={newUser.email}
-                        onChange={e => setNewUser({...newUser, email: e.target.value})}
-                      />
-                      <div>
-                          <label className="text-sm font-medium text-slate-700 block mb-1">Permissão / Função</label>
-                          <select 
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20"
-                            value={newUser.role}
-                            onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}
-                          >
-                              {roleOptions.map(opt => (
-                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                          </select>
-                      </div>
-                      <div className="bg-blue-50 p-3 rounded text-xs text-blue-700">
-                          A senha padrão será <strong>123456</strong>. O usuário poderá alterá-la no primeiro acesso (simulado).
-                      </div>
-                  </div>
-                  <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-2xl">
-                      <Button variant="outline" onClick={() => setIsAddUserOpen(false)} className="text-xs h-9">Cancelar</Button>
-                      <Button onClick={handleAddUser} className="text-xs h-9">Criar Usuário</Button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {isEditUserOpen && editingUser && (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-              <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl animate-in fade-in zoom-in duration-200">
-                  <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50 rounded-t-2xl">
-                      <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                          <Edit3 size={20} className="text-blue-600"/> Editar Usuário
-                      </h2>
-                      <button onClick={() => setIsEditUserOpen(false)} className="text-slate-400 hover:text-slate-600"><X size={20}/></button>
-                  </div>
-                  <div className="p-6 space-y-4">
-                      <Input 
-                        label="Nome" 
-                        value={editingUser.name}
-                        onChange={e => setEditingUser({...editingUser, name: e.target.value})}
-                      />
-                      <Input 
-                        label="Email" 
-                        type="email" 
-                        value={editingUser.email}
-                        onChange={e => setEditingUser({...editingUser, email: e.target.value})}
-                      />
-                      <div>
-                          <label className="text-sm font-medium text-slate-700 block mb-1">Permissão</label>
-                          <select 
-                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500/20"
-                            value={editingUser.role}
-                            onChange={e => setEditingUser({...editingUser, role: e.target.value as UserRole})}
-                            disabled={editingUser.id === currentUser.id || (editingUser.role === 'admin' && users.filter(u => u.role === 'admin').length === 1)}
-                          >
-                              {roleOptions.map(opt => (
-                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                          </select>
-                      </div>
-                      
-                      <div className="border-t border-slate-100 pt-3">
-                          <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Redefinir Senha (Opcional)</label>
-                          <Input 
-                            type="text" 
-                            placeholder="Nova senha (deixe vazio para manter)" 
-                            value={editPassword}
-                            onChange={e => setEditPassword(e.target.value)}
-                          />
-                      </div>
-                  </div>
-                  <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50 rounded-b-2xl">
-                      <Button variant="outline" onClick={() => setIsEditUserOpen(false)} className="text-xs h-9">Cancelar</Button>
-                      <Button onClick={handleSaveUserEdit} className="text-xs h-9">Salvar Alterações</Button>
-                  </div>
-              </div>
-          </div>
-      )}
-
-      {/* System Tab Content */}
-      {activeTab === 'system' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="col-span-2 space-y-6">
-                  {/* SMTP Config */}
-                  <Card className="p-6 border-l-4 border-l-blue-600">
-                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                          <Mail size={20} className="text-blue-600" /> Configuração de E-mail (SMTP)
-                      </h3>
-                      
-                      {/* NEW INFO BOX */}
-                      <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex gap-2 text-sm text-amber-800">
-                          <Info size={18} className="shrink-0 mt-0.5" />
-                          <p>
-                              <strong>Nota de Sistema:</strong> Como este é um sistema rodando no navegador (Front-End), o envio de email via SMTP é <strong>simulado</strong> no console por motivos de segurança do navegador (CORS/Sockets). Para envio real, é necessária uma integração via API (ex: SendGrid, EmailJS ou Backend).
-                          </p>
-                      </div>
-
-                      <div className="space-y-4">
-                          <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100 mb-2">
-                              <div>
-                                  <p className="text-sm font-bold text-blue-900">Ativar envio de e-mails</p>
-                                  <p className="text-xs text-blue-700">Envia notificações de aprovação, rejeição e novos leads.</p>
-                              </div>
-                              <input 
-                                type="checkbox" 
-                                className="w-5 h-5" 
-                                checked={settingsForm.smtpConfig?.enabled || false}
-                                onChange={e => updateSmtp({ enabled: e.target.checked })}
-                              />
-                          </div>
-                          
-                          <div className="grid grid-cols-2 gap-4">
-                              <Input 
-                                label="Host SMTP" 
-                                placeholder="smtp.gmail.com"
-                                value={settingsForm.smtpConfig?.host || ''}
-                                onChange={e => updateSmtp({ host: e.target.value })}
-                              />
-                              <Input 
-                                label="Porta" 
-                                type="number"
-                                placeholder="587"
-                                value={settingsForm.smtpConfig?.port || ''}
-                                onChange={e => updateSmtp({ port: Number(e.target.value) })}
-                              />
-                          </div>
-                          <div className="grid grid-cols-2 gap-4">
-                              <Input 
-                                label="Usuário (Email)" 
-                                placeholder="seu-email@gmail.com"
-                                value={settingsForm.smtpConfig?.user || ''}
-                                onChange={e => updateSmtp({ user: e.target.value })}
-                              />
-                              <Input 
-                                label="Senha / App Password" 
-                                type="password"
-                                placeholder="****"
-                                value={settingsForm.smtpConfig?.pass || ''}
-                                onChange={e => updateSmtp({ pass: e.target.value })}
-                              />
-                          </div>
-                          <Input 
-                                label="Nome do Remetente" 
-                                placeholder="Sistema Imobiliário"
-                                value={settingsForm.smtpConfig?.fromName || ''}
-                                onChange={e => updateSmtp({ fromName: e.target.value })}
-                          />
-                          
-                          {/* Test Email Section */}
-                          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex items-end gap-2 mt-2">
-                              <div className="flex-1">
-                                  <label className="text-xs font-medium text-slate-500 block mb-1">Testar Conexão (Simulação)</label>
-                                  <input 
-                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm"
-                                    placeholder="email@teste.com"
-                                    value={testEmail}
-                                    onChange={e => setTestEmail(e.target.value)}
-                                  />
-                              </div>
-                              <Button variant="secondary" onClick={handleTestSmtp} disabled={isTestingSmtp}>
-                                  {isTestingSmtp ? 'Enviando...' : 'Simular Envio'}
-                              </Button>
-                          </div>
-
-                          <p className="text-xs text-slate-500 mt-1">
-                              <strong>Nota para Gmail:</strong> Você deve usar uma "Senha de App" (App Password).
-                          </p>
-                      </div>
-                  </Card>
-
-                  {/* ... (Rest of System Tab content remains unchanged) ... */}
-                  {/* Email Templates Editor */}
-                  <Card className="p-6 border-l-4 border-l-teal-500">
-                      <div className="flex items-center justify-between mb-4">
-                          <h3 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
-                              <FileEdit size={20} className="text-teal-600" /> Modelos de E-mail
-                          </h3>
-                      </div>
-                      <div className="flex gap-2 mb-4 border-b border-slate-200 overflow-x-auto">
-                          <button 
-                            onClick={() => setActiveTemplate('propertyApproved')}
-                            className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTemplate === 'propertyApproved' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                          >
-                              Aprovação
-                          </button>
-                          <button 
-                            onClick={() => setActiveTemplate('propertyRejected')}
-                            className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTemplate === 'propertyRejected' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                          >
-                              Reprovação
-                          </button>
-                          <button 
-                            onClick={() => setActiveTemplate('leadAssigned')}
-                            className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTemplate === 'leadAssigned' ? 'border-teal-600 text-teal-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                          >
-                              Novo Lead
-                          </button>
-                      </div>
-                      
-                      <div className="space-y-2">
-                          <div className="flex flex-wrap gap-2 mb-2">
-                              <span className="text-xs font-semibold text-slate-500">Variáveis disponíveis:</span>
-                              {getTemplateVars(activeTemplate).map(v => (
-                                  <code key={v} className="bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-xs text-slate-600">{v}</code>
-                              ))}
-                          </div>
-                          <textarea 
-                              className="w-full h-48 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-500/20 font-mono text-sm leading-relaxed text-slate-700"
-                              value={templates[activeTemplate]}
-                              onChange={(e) => setTemplates({...templates, [activeTemplate]: e.target.value})}
-                              spellCheck={false}
-                          />
-                      </div>
-                  </Card>
-
-                  <Card className="p-6 border-l-4 border-l-emerald-500">
-                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                          <Database size={20} className="text-emerald-600" /> Banco de Dados em Nuvem (Supabase)
-                      </h3>
-                      <div className="space-y-4">
-                          <div className="flex flex-col space-y-1">
-                              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                                  URL do Projeto
-                              </label>
-                              <Input 
-                                placeholder="https://xyz.supabase.co" 
-                                value={settingsForm.supabaseUrl || ''}
-                                onChange={(e) => setSettingsForm({...settingsForm, supabaseUrl: e.target.value})}
-                              />
-                          </div>
-                          <div className="flex flex-col space-y-1">
-                              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                                  Chave Pública (Anon Key)
-                              </label>
-                              <Input 
-                                type="password"
-                                placeholder="eyJh..." 
-                                value={settingsForm.supabaseAnonKey || ''}
-                                onChange={(e) => setSettingsForm({...settingsForm, supabaseAnonKey: e.target.value})}
-                              />
-                              <p className="text-xs text-slate-500 mt-1">
-                                  Essas credenciais permitem sincronizar seus dados na nuvem para acesso multi-dispositivo.
-                                  <a href="https://supabase.com/dashboard/project/_/settings/api" target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline ml-1">
-                                      Onde encontrar?
-                                  </a>
-                              </p>
-                          </div>
-                      </div>
-                  </Card>
-
-                  <Card className="p-6 border-l-4 border-l-indigo-500">
-                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                          <Sparkles size={20} className="text-indigo-600" /> Integração Inteligência Artificial
-                      </h3>
-                      <div className="space-y-4">
-                          <div className="flex flex-col space-y-1">
-                              <label className="text-sm font-medium text-slate-700 flex items-center gap-2">
-                                  <Key size={14} className="text-slate-400" /> Chave da API (Gemini API Key)
-                              </label>
-                              <Input 
-                                type="password"
-                                placeholder="Cole sua chave aqui (ex: AIzaSy...)" 
-                                value={settingsForm.geminiApiKey || ''}
-                                onChange={(e) => setSettingsForm({...settingsForm, geminiApiKey: e.target.value})}
-                              />
-                              <p className="text-xs text-slate-500 mt-1">
-                                  Necessário para gerar descrições, calcular compatibilidade (match) e fornecer insights de leads.
-                                  <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:underline ml-1">
-                                      Obter chave
-                                  </a>
-                              </p>
-                          </div>
-                      </div>
-                  </Card>
-
-                  <Card className="p-6">
-                      <h3 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                          <Settings size={20} className="text-slate-500" /> Geral
-                      </h3>
-                      <div className="space-y-4">
-                          <Input 
-                            label="Nome da Empresa" 
-                            value={settingsForm.companyName}
-                            onChange={(e) => setSettingsForm({...settingsForm, companyName: e.target.value})}
-                          />
-                          
-                          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                              <div>
-                                  <p className="font-medium text-slate-700">Aprovação de Imóveis</p>
-                                  <p className="text-xs text-slate-500">Exigir que funcionários aprovem imóveis de corretores antes de publicar.</p>
-                              </div>
-                              <label className="relative inline-flex items-center cursor-pointer">
-                                  <input 
+            {/* SYSTEM TAB */}
+            {activeTab === 'system' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <Card className="p-6">
+                        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Building2 size={20}/> Informações da Imobiliária</h2>
+                        <div className="space-y-4">
+                            <Input 
+                                label="Nome da Empresa" 
+                                value={settingsForm.companyName}
+                                onChange={e => setSettingsForm({...settingsForm, companyName: e.target.value})}
+                            />
+                            
+                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                <div>
+                                    <span className="font-medium text-slate-700 block">Novos Cadastros</span>
+                                    <span className="text-xs text-slate-500">Permitir que novos usuários se cadastrem na tela de login?</span>
+                                </div>
+                                <input 
                                     type="checkbox" 
-                                    className="sr-only peer" 
-                                    checked={settingsForm.requirePropertyApproval}
-                                    onChange={(e) => setSettingsForm({...settingsForm, requirePropertyApproval: e.target.checked})}
-                                  />
-                                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                              </label>
-                          </div>
-
-                          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg border border-slate-200">
-                              <div>
-                                  <p className="font-medium text-slate-700">Novos Cadastros</p>
-                                  <p className="text-xs text-slate-500">Permitir que novos usuários se registrem na plataforma.</p>
-                              </div>
-                              <label className="relative inline-flex items-center cursor-pointer">
-                                  <input 
-                                    type="checkbox" 
-                                    className="sr-only peer" 
+                                    className="w-5 h-5"
                                     checked={settingsForm.allowNewRegistrations}
-                                    onChange={(e) => setSettingsForm({...settingsForm, allowNewRegistrations: e.target.checked})}
-                                  />
-                                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-600"></div>
-                              </label>
-                          </div>
-                      </div>
-                  </Card>
+                                    onChange={e => setSettingsForm({...settingsForm, allowNewRegistrations: e.target.checked})}
+                                />
+                            </div>
 
-                  <Card className="p-6 border-l-4 border-l-red-500">
-                      <h3 className="text-lg font-semibold text-red-700 mb-4 flex items-center gap-2">
-                          <AlertTriangle size={20} /> Zona de Perigo
-                      </h3>
-                      <div className="flex items-center justify-between p-4 bg-red-50 rounded-lg border border-red-100">
-                              <div>
-                                  <p className="font-bold text-red-800">Modo de Manutenção</p>
-                                  <p className="text-xs text-red-600">Bloqueia o acesso de todos os usuários (exceto admins).</p>
-                              </div>
-                              <label className="relative inline-flex items-center cursor-pointer">
-                                  <input 
+                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                <div>
+                                    <span className="font-medium text-slate-700 block">Aprovação de Imóveis</span>
+                                    <span className="text-xs text-slate-500">Exigir aprovação de admin para publicar imóveis?</span>
+                                </div>
+                                <input 
                                     type="checkbox" 
-                                    className="sr-only peer" 
+                                    className="w-5 h-5"
+                                    checked={settingsForm.requirePropertyApproval}
+                                    onChange={e => setSettingsForm({...settingsForm, requirePropertyApproval: e.target.checked})}
+                                />
+                            </div>
+
+                            <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-200">
+                                <div>
+                                    <span className="font-medium text-slate-700 block">Modo Manutenção</span>
+                                    <span className="text-xs text-slate-500">Bloquear acesso de usuários não-admin?</span>
+                                </div>
+                                <input 
+                                    type="checkbox" 
+                                    className="w-5 h-5"
                                     checked={settingsForm.maintenanceMode}
-                                    onChange={(e) => setSettingsForm({...settingsForm, maintenanceMode: e.target.checked})}
-                                  />
-                                  <div className="w-11 h-6 bg-red-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-red-600"></div>
-                              </label>
-                          </div>
-                  </Card>
-                  
-                  <div className="flex justify-end">
-                      <Button onClick={handleSettingsSave} className="gap-2">
-                          <Save size={18} /> Salvar Configurações
-                      </Button>
-                  </div>
-              </div>
+                                    onChange={e => setSettingsForm({...settingsForm, maintenanceMode: e.target.checked})}
+                                />
+                            </div>
+                        </div>
+                    </Card>
 
-              <div className="col-span-1">
-                  <Card className="p-6 bg-slate-50 h-fit sticky top-6">
-                      <h3 className="font-semibold text-slate-800 mb-2">Dica do Sistema</h3>
-                      <p className="text-sm text-slate-600 mb-4">
-                          Alterações nas configurações globais afetam todos os usuários em tempo real.
-                      </p>
-                      <ul className="text-sm text-slate-600 space-y-2 list-disc list-inside">
-                          <li>Admins têm acesso total.</li>
-                          <li>A chave de API é essencial para funcionalidades de IA.</li>
-                          <li>A aprovação de imóveis afeta apenas Corretores.</li>
-                          <li>Modo manutenção exibe tela de bloqueio.</li>
-                      </ul>
-                  </Card>
-              </div>
-          </div>
-      )}
+                    <Card className="p-6">
+                        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Key size={20}/> Chaves de API</h2>
+                        <div className="space-y-4">
+                            <Input 
+                                label="Google Gemini API Key (IA)" 
+                                type="password"
+                                value={settingsForm.geminiApiKey}
+                                onChange={e => setSettingsForm({...settingsForm, geminiApiKey: e.target.value})}
+                                placeholder="sk-..."
+                            />
+                            <div className="pt-4 border-t border-slate-100">
+                                <h3 className="text-sm font-bold text-slate-700 mb-2">Supabase (Banco de Dados)</h3>
+                                <Input 
+                                    label="Project URL" 
+                                    value={settingsForm.supabaseUrl}
+                                    onChange={e => setSettingsForm({...settingsForm, supabaseUrl: e.target.value})}
+                                    placeholder="https://..."
+                                    className="mb-3"
+                                />
+                                <Input 
+                                    label="Anon Key" 
+                                    type="password"
+                                    value={settingsForm.supabaseAnonKey}
+                                    onChange={e => setSettingsForm({...settingsForm, supabaseAnonKey: e.target.value})}
+                                    placeholder="eyJ..."
+                                />
+                            </div>
+                        </div>
+                    </Card>
 
-      {/* Database Tab Content ... (No Change) ... */}
-      {activeTab === 'database' && (
-          <div className="space-y-6">
-              <Card className="p-6 border-l-4 border-l-emerald-600">
-                  <div className="flex justify-between items-start mb-6">
-                      <div>
-                          <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                              <Database className="text-emerald-600" size={24} />
-                              Gerenciamento do Banco de Dados
-                          </h3>
-                          <p className="text-sm text-slate-500">Ferramentas para configurar e popular o Supabase (Nuvem).</p>
-                      </div>
-                  </div>
+                    {/* NEW INTEGRATION SECTION */}
+                    <Card className="p-6">
+                        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <Link size={20}/> Integrações (Webhooks)
+                        </h2>
+                        <div className="space-y-4">
+                            <p className="text-sm text-slate-500 bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                Configure Webhooks para integrar com <strong>n8n, Zapier, Make</strong> ou outros sistemas.
+                                O sistema enviará um POST JSON sempre que um imóvel for: 
+                                <span className="font-semibold text-blue-700"> Publicado, Editado, Vendido ou Removido.</span>
+                            </p>
+                            <Input 
+                                label="Webhook URL (n8n / Zapier)" 
+                                value={settingsForm.n8nWebhookUrl || ''}
+                                onChange={e => setSettingsForm({...settingsForm, n8nWebhookUrl: e.target.value})}
+                                placeholder="https://seu-n8n.com/webhook/..."
+                            />
+                        </div>
+                    </Card>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Section 1: Schema Structure */}
-                      <div className="space-y-4">
-                          <div className="flex items-center gap-3 mb-2">
-                              <span className="bg-slate-200 text-slate-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">1</span>
-                              <h4 className="font-bold text-slate-700 text-lg">Criar Tabela com Todos os Campos</h4>
-                          </div>
-                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 h-full flex flex-col justify-between">
-                              <div className="mb-4">
-                                  <div className="flex items-center gap-2 text-slate-800 font-semibold mb-2">
-                                      <Server size={18} /> Estrutura SQL
-                                  </div>
-                                  <p className="text-sm text-slate-600 leading-relaxed">
-                                      Gera o script SQL para criar as tabelas necessárias para armazenar <strong>todos os dados do sistema</strong>.
-                                  </p>
-                                  <ul className="text-xs text-slate-500 mt-3 space-y-1 list-disc list-inside">
-                                      <li>Imóveis (Properties)</li>
-                                      <li>Clientes e Visitas (Clients)</li>
-                                      <li>Usuários e Equipe (Users)</li>
-                                      <li>Funis de Venda e Etapas (Pipelines)</li>
-                                      <li>Logs de Auditoria (Logs)</li>
-                                      <li>Configurações Globais (SystemSettings)</li>
-                                  </ul>
-                              </div>
-                              <Button variant="outline" className="w-full gap-2 border-slate-300 hover:bg-white hover:border-primary-500 hover:text-primary-600 transition-all" onClick={copySqlSchema}>
-                                  <Code size={18} /> Copiar SQL Completo
-                              </Button>
-                          </div>
-                      </div>
-
-                      {/* Section 2: Data Population */}
-                      <div className="space-y-4">
-                          <div className="flex items-center gap-3 mb-2">
-                              <span className="bg-slate-200 text-slate-600 w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">2</span>
-                              <h4 className="font-bold text-slate-700 text-lg">Sincronização de Dados</h4>
-                          </div>
-                          <div className="bg-slate-50 p-5 rounded-xl border border-slate-200 h-full flex flex-col justify-between">
-                              <div className="mb-4">
-                                  <div className="flex items-center gap-2 text-slate-800 font-semibold mb-2">
-                                      <RefreshCcw size={18} /> Nuvem
-                                  </div>
-                                  <p className="text-sm text-slate-600 leading-relaxed">
-                                      Escolha a direção da sincronização. Você pode enviar seus dados locais para a nuvem (Backup) ou baixar os dados da nuvem para este dispositivo (Restaurar).
-                                  </p>
-                              </div>
-                              <div className="flex flex-col gap-3">
-                                  <Button 
-                                    className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-500/20" 
-                                    onClick={handleSeedDatabase}
-                                    isLoading={isSyncing}
-                                  >
-                                      <UploadCloud size={18} /> Enviar (Backup Local &rarr; Nuvem)
-                                  </Button>
-                                  <Button 
-                                    className="w-full gap-2 bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-500/20" 
-                                    onClick={handlePullDatabase}
-                                    isLoading={isSyncing}
-                                  >
-                                      <DownloadCloud size={18} /> Baixar (Restaurar Nuvem &rarr; Local)
-                                  </Button>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-
-                  {/* Log Area */}
-                  {syncLog.length > 0 && (
-                      <div className="mt-8 bg-slate-900 text-slate-300 p-5 rounded-xl font-mono text-xs max-h-60 overflow-y-auto border border-slate-800 shadow-inner">
-                          <div className="flex justify-between items-center border-b border-slate-700 pb-2 mb-3">
-                              <p className="text-slate-400 font-bold uppercase flex items-center gap-2">
-                                  <CheckCircle size={14}/> Log de Execução
-                              </p>
-                              <button onClick={() => setSyncLog([])} className="text-slate-500 hover:text-white"><X size={14}/></button>
-                          </div>
-                          <div className="space-y-1.5">
-                              {syncLog.map((line, idx) => (
-                                  <div key={idx} className={`${line.includes('[ERRO]') ? 'text-red-400' : 'text-slate-300'}`}>
-                                      <span className="opacity-30 mr-2">{new Date().toLocaleTimeString()}</span>
-                                      {line}
-                                  </div>
-                              ))}
-                          </div>
-                      </div>
-                  )}
-              </Card>
-          </div>
-      )}
-
-      {/* Properties Tab Content ... (No Change) ... */}
-      {activeTab === 'properties' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Card className="flex flex-col h-[500px]">
-                  <div className="p-4 border-b border-slate-100">
-                      <h2 className="text-lg font-semibold text-slate-800">Tipos de Imóveis</h2>
-                      <p className="text-sm text-slate-500">Categorias para cadastro e filtro.</p>
-                  </div>
-                  <div className="p-4 border-b border-slate-100 flex gap-2">
-                      <Input 
-                        placeholder="Novo tipo (ex: Loft)" 
-                        value={newTypeLabel}
-                        onChange={e => setNewTypeLabel(e.target.value)}
-                        className="flex-1"
-                        onKeyDown={e => { if(e.key === 'Enter') addPropertyType() }}
-                      />
-                      <Button onClick={addPropertyType} disabled={!newTypeLabel}><Plus size={18}/></Button>
-                  </div>
-                  <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                      {systemSettings.propertyTypes.map((type, idx) => (
-                          <div key={idx} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-200 group">
-                              <span className="text-slate-700 font-medium">{type.label}</span>
-                              <button 
-                                onClick={() => removePropertyType(type.value)}
-                                className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                  <Trash2 size={16} />
-                              </button>
-                          </div>
-                      ))}
-                  </div>
-              </Card>
-
-              {/* Diferenciais */}
-              <StringListManager 
-                  title="Diferenciais e Comodidades"
-                  description="Itens selecionáveis no cadastro (tags)."
-                  items={systemSettings.propertyFeatures}
-                  onAdd={addFeature}
-                  onRemove={removeFeature}
-                  placeholder="Nova comodidade (ex: Adega)"
-              />
-              
-              {/* AI Prompt Editor */}
-              <Card className="md:col-span-2 p-6 border-indigo-100 bg-gradient-to-br from-white to-indigo-50/30">
-                  <div className="flex items-center justify-between mb-4">
-                      <div>
-                          <h2 className="text-lg font-bold text-indigo-900 flex items-center gap-2">
-                              <Sparkles className="text-indigo-600" size={20} />
-                              Prompt da Inteligência Artificial (Descrição de Imóveis)
-                          </h2>
-                          <p className="text-sm text-slate-500">Personalize como a IA gera as descrições dos imóveis.</p>
-                      </div>
-                      <Button onClick={handlePromptSave} className="gap-2">
-                          <Save size={18} /> Salvar Prompt
-                      </Button>
-                  </div>
-                  
-                  <div className="mb-2">
-                      <p className="text-xs text-slate-600 font-semibold mb-2">Variáveis Disponíveis (serão substituídas pelos dados do imóvel):</p>
-                      <div className="flex flex-wrap gap-2 mb-4">
-                          {['{{title}}', '{{type}}', '{{price}}', '{{address}}', '{{area}}', '{{bedrooms}}', '{{bathrooms}}', '{{features}}'].map(tag => (
-                              <code key={tag} className="px-2 py-1 bg-slate-100 border border-slate-200 rounded text-xs text-indigo-600 font-mono">{tag}</code>
-                          ))}
-                      </div>
-                  </div>
-
-                  <textarea 
-                      className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 font-mono text-sm leading-relaxed text-slate-700"
-                      value={promptText}
-                      onChange={(e) => setPromptText(e.target.value)}
-                      spellCheck={false}
-                  />
-              </Card>
-          </div>
-      )}
-
-      {/* CRM Tab - Configuração de Performance ... (No Change) ... */}
-      {activeTab === 'crm' && (
-          <div className="space-y-6">
-              {/* Team Performance Settings */}
-              <Card className="p-6 border-l-4 border-l-orange-500">
-                  <div className="flex items-center justify-between mb-6">
-                      <div>
-                          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                              <Target className="text-orange-600" size={20} />
-                              Metas e Monitoramento de Equipe
-                          </h2>
-                          <p className="text-sm text-slate-500">Configure as metas para considerar um corretor ou captador "Ativo" no dashboard.</p>
-                      </div>
-                      <Button onClick={handleTeamPerfSave} className="gap-2">
-                          <Save size={18} /> Salvar Regras
-                      </Button>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Thresholds */}
-                      <div className="space-y-4">
-                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2">Metas (Quantidade Mínima)</h4>
-                          <p className="text-xs text-slate-500 mb-2">Quantidades necessárias dentro do período selecionado no Dashboard para atingir o status positivo.</p>
-                          
-                          <div className="grid grid-cols-3 gap-4">
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 block mb-1">Mín. Imóveis</label>
-                                  <Input 
-                                    type="number" 
-                                    value={teamPerfConfig.minProperties}
-                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, minProperties: Number(e.target.value)})}
-                                  />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 block mb-1">Mín. Leads</label>
-                                  <Input 
-                                    type="number" 
-                                    value={teamPerfConfig.minLeads}
-                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, minLeads: Number(e.target.value)})}
-                                  />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 block mb-1">Mín. Visitas</label>
-                                  <Input 
-                                    type="number" 
-                                    value={teamPerfConfig.minVisits}
-                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, minVisits: Number(e.target.value)})}
-                                  />
-                              </div>
-                          </div>
-                      </div>
-
-                      {/* Labels */}
-                      <div className="space-y-4">
-                          <h4 className="text-sm font-bold text-slate-700 uppercase tracking-wider border-b border-slate-100 pb-2">Personalização de Status</h4>
-                          <p className="text-xs text-slate-500 mb-2">Defina os nomes que aparecerão na tabela de monitoramento.</p>
-                          
-                          <div className="space-y-3">
-                              <div className="flex items-center gap-3">
-                                  <div className="w-3 h-3 rounded-full bg-green-500 shrink-0"></div>
-                                  <Input 
-                                    placeholder="Nome Status Positivo" 
+                    <Card className="p-6">
+                        <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2"><Mail size={20}/> Configuração SMTP (Email)</h2>
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium text-slate-700">Habilitar Envio de Emails</span>
+                                <input 
+                                    type="checkbox"
+                                    className="w-5 h-5"
+                                    checked={settingsForm.smtpConfig?.enabled || false}
+                                    onChange={e => updateSmtp({ enabled: e.target.checked })}
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input label="Host SMTP" value={settingsForm.smtpConfig?.host} onChange={e => updateSmtp({ host: e.target.value })} />
+                                <Input label="Porta" type="number" value={settingsForm.smtpConfig?.port} onChange={e => updateSmtp({ port: Number(e.target.value) })} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Input label="Usuário" value={settingsForm.smtpConfig?.user} onChange={e => updateSmtp({ user: e.target.value })} />
+                                <Input label="Senha" type="password" value={settingsForm.smtpConfig?.pass} onChange={e => updateSmtp({ pass: e.target.value })} />
+                            </div>
+                            <Input label="Nome do Remetente" value={settingsForm.smtpConfig?.fromName} onChange={e => updateSmtp({ fromName: e.target.value })} />
+                            
+                            <div className="pt-4 border-t border-slate-100 flex gap-2 items-end">
+                                <Input 
+                                    label="Testar envio para:" 
+                                    value={testEmail} 
+                                    onChange={e => setTestEmail(e.target.value)} 
                                     className="flex-1"
-                                    value={teamPerfConfig.activeLabel}
-                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, activeLabel: e.target.value})}
-                                  />
-                              </div>
-                              <div className="flex items-center gap-3">
-                                  <div className="w-3 h-3 rounded-full bg-amber-500 shrink-0"></div>
-                                  <Input 
-                                    placeholder="Nome Status Alerta" 
-                                    className="flex-1"
-                                    value={teamPerfConfig.warningLabel}
-                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, warningLabel: e.target.value})}
-                                  />
-                              </div>
-                              <div className="flex items-center gap-3">
-                                  <div className="w-3 h-3 rounded-full bg-red-500 shrink-0"></div>
-                                  <Input 
-                                    placeholder="Nome Status Negativo" 
-                                    className="flex-1"
-                                    value={teamPerfConfig.inactiveLabel}
-                                    onChange={e => setTeamPerfConfig({...teamPerfConfig, inactiveLabel: e.target.value})}
-                                  />
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-              </Card>
+                                />
+                                <Button variant="outline" onClick={handleTestSmtp} disabled={isTestingSmtp}>
+                                    {isTestingSmtp ? 'Enviando...' : 'Enviar Teste'}
+                                </Button>
+                            </div>
+                        </div>
+                    </Card>
 
-              {/* AI Prompts Section ... (No Change) ... */}
-              <Card className="p-6 border-l-4 border-l-purple-500">
-                  <div className="flex items-center justify-between mb-6">
-                      <div>
-                          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                              <Sparkles className="text-purple-600" size={20} />
-                              Configuração de IA do CRM
-                          </h2>
-                          <p className="text-sm text-slate-500">Personalize os prompts usados para gerar insights e compatibilidade no CRM.</p>
-                      </div>
-                      <Button onClick={handleCrmPromptsSave} className="gap-2">
-                          <Save size={18} /> Salvar Prompts
-                      </Button>
-                  </div>
+                    <div className="lg:col-span-2 flex justify-end pt-4">
+                        <Button onClick={handleSettingsSave} className="w-full md:w-auto">
+                            <Save size={18} /> Salvar Todas Configurações
+                        </Button>
+                    </div>
+                </div>
+            )}
 
-                  <div className="flex gap-4 mb-4 border-b border-slate-200">
-                      <button 
-                        onClick={() => setActiveCrmPromptTab('match')} 
-                        className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeCrmPromptTab === 'match' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                      >
-                          Match IA
-                      </button>
-                      <button 
-                        onClick={() => setActiveCrmPromptTab('global')} 
-                        className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeCrmPromptTab === 'global' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                      >
-                          Insights Globais (Pipeline)
-                      </button>
-                      <button 
-                        onClick={() => setActiveCrmPromptTab('card')} 
-                        className={`pb-2 px-4 text-sm font-medium border-b-2 transition-colors ${activeCrmPromptTab === 'card' ? 'border-purple-600 text-purple-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                      >
-                          Insights do Card (Lead)
-                      </button>
-                  </div>
+            {/* PROPERTIES CONFIG TAB */}
+            {activeTab === 'properties' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <Card className="flex flex-col h-[500px]">
+                        <div className="p-4 border-b border-slate-100">
+                            <h2 className="text-lg font-semibold text-slate-800">Tipos de Imóvel</h2>
+                            <p className="text-sm text-slate-500">Opções disponíveis no cadastro.</p>
+                        </div>
+                        <div className="p-4 border-b border-slate-100 flex gap-2">
+                            <Input 
+                                placeholder="Novo tipo (Ex: Loft)" 
+                                value={newTypeLabel}
+                                onChange={e => setNewTypeLabel(e.target.value)}
+                                className="flex-1"
+                            />
+                            <Button onClick={addPropertyType} disabled={!newTypeLabel}><Plus size={18}/></Button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                            {systemSettings.propertyTypes.map((type) => (
+                                <div key={type.value} className="flex justify-between items-center p-3 bg-slate-50 rounded-lg border border-slate-200 group">
+                                    <div>
+                                        <span className="text-slate-700 font-medium block">{type.label}</span>
+                                        <span className="text-xs text-slate-400 font-mono">{type.value}</span>
+                                    </div>
+                                    <button 
+                                        onClick={() => removePropertyType(type.value)}
+                                        className="text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </Card>
 
-                  {/* Dynamic Editor Content */}
-                  <div>
-                      {activeCrmPromptTab === 'match' && (
-                          <div className="animate-in fade-in duration-200">
-                              <p className="text-xs text-slate-500 mb-2">
-                                  Este prompt é usado quando você clica em "Match (IA)" no card do lead. Ele compara o perfil do cliente com um imóvel específico.
-                              </p>
-                              <div className="flex flex-wrap gap-2 mb-3">
-                                  <span className="text-xs font-semibold text-slate-600 mr-2">Variáveis Cliente:</span>
-                                  {['{{clientName}}', '{{budget}}', '{{interest}}', '{{locations}}', '{{minBedrooms}}', '{{minArea}}', '{{notes}}'].map(tag => (
-                                      <code key={tag} className="px-1.5 py-0.5 bg-purple-50 border border-purple-100 rounded text-[10px] text-purple-700 font-mono">{tag}</code>
-                                  ))}
-                                  <span className="text-xs font-semibold text-slate-600 ml-4 mr-2">Variáveis Imóvel:</span>
-                                  {['{{propertyTitle}}', '{{propertyType}}', '{{propertyPrice}}', '{{propertyAddress}}', '{{propertyBedrooms}}', '{{propertyArea}}', '{{propertyFeatures}}'].map(tag => (
-                                      <code key={tag} className="px-1.5 py-0.5 bg-blue-50 border border-blue-100 rounded text-[10px] text-blue-700 font-mono">{tag}</code>
-                                  ))}
-                              </div>
-                              <textarea 
-                                  className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-sm leading-relaxed text-slate-700"
-                                  value={crmPrompts.matchAi}
-                                  onChange={(e) => setCrmPrompts({...crmPrompts, matchAi: e.target.value})}
-                                  spellCheck={false}
-                              />
-                          </div>
-                      )}
+                    <StringListManager 
+                        title="Diferenciais (Features)" 
+                        description="Itens de lazer e comodidades."
+                        items={systemSettings.propertyFeatures}
+                        onAdd={addFeature}
+                        onRemove={removeFeature}
+                        placeholder="Ex: Piscina Aquecida"
+                    />
 
-                      {activeCrmPromptTab === 'global' && (
-                          <div className="animate-in fade-in duration-200">
-                              <p className="text-xs text-slate-500 mb-2">
-                                  Este prompt gera os insights gerais do pipeline (botão "Insights IA" no topo do CRM).
-                              </p>
-                              <div className="flex flex-wrap gap-2 mb-3">
-                                  <span className="text-xs font-semibold text-slate-600 mr-2">Variável Obrigatória:</span>
-                                  <code className="px-1.5 py-0.5 bg-green-50 border border-green-100 rounded text-[10px] text-green-700 font-mono">{'{{pipelineData}}'}</code>
-                                  <span className="text-xs text-slate-400 ml-2">(Contém um JSON resumido de todos os leads do pipeline)</span>
-                              </div>
-                              <textarea 
-                                  className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-sm leading-relaxed text-slate-700"
-                                  value={crmPrompts.crmGlobal}
-                                  onChange={(e) => setCrmPrompts({...crmPrompts, crmGlobal: e.target.value})}
-                                  spellCheck={false}
-                              />
-                          </div>
-                      )}
+                    <StringListManager 
+                        title="Localizações (Sugestões)" 
+                        description="Bairros ou Cidades para autocomplete."
+                        items={systemSettings.availableLocations}
+                        onAdd={addLocation}
+                        onRemove={removeLocation}
+                        placeholder="Ex: São Paulo - Morumbi"
+                    />
+                </div>
+            )}
 
-                      {activeCrmPromptTab === 'card' && (
-                          <div className="animate-in fade-in duration-200">
-                              <p className="text-xs text-slate-500 mb-2">
-                                  Este prompt gera a estratégia comercial individual para um lead (ícone de brilho no card).
-                              </p>
-                              <div className="flex flex-wrap gap-2 mb-3">
-                                  <span className="text-xs font-semibold text-slate-600 mr-2">Variáveis:</span>
-                                  {['{{clientName}}', '{{createdAt}}', '{{lastContact}}', '{{visitsHistory}}', '{{interest}}', '{{locations}}', '{{budget}}', '{{matchingProperties}}'].map(tag => (
-                                      <code key={tag} className="px-1.5 py-0.5 bg-purple-50 border border-purple-100 rounded text-[10px] text-purple-700 font-mono">{tag}</code>
-                                  ))}
-                              </div>
-                              <textarea 
-                                  className="w-full h-64 p-4 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-purple-500/20 font-mono text-sm leading-relaxed text-slate-700"
-                                  value={crmPrompts.crmCard}
-                                  onChange={(e) => setCrmPrompts({...crmPrompts, crmCard: e.target.value})}
-                                  spellCheck={false}
-                              />
-                          </div>
-                      )}
-                  </div>
-              </Card>
+            {/* CRM & AI TAB */}
+            {activeTab === 'crm' && (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <StringListManager 
+                            title="Origens de Leads" 
+                            description="Canais de entrada de clientes."
+                            items={systemSettings.leadSources}
+                            onAdd={addLeadSource}
+                            onRemove={removeLeadSource}
+                            placeholder="Ex: LinkedIn Ads"
+                        />
+                        
+                        {/* Prompt Configuration */}
+                        <Card className="flex flex-col h-[500px]">
+                            <div className="p-4 border-b border-slate-100">
+                                <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                                    <Sparkles size={18} className="text-purple-600"/> Prompts da IA
+                                </h2>
+                                <p className="text-sm text-slate-500">Personalize como a IA escreve e analisa.</p>
+                            </div>
+                            
+                            <div className="flex border-b border-slate-100 overflow-x-auto">
+                                <button onClick={() => setActiveCrmPromptTab('match')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'match' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`}>Matchmaking</button>
+                                <button onClick={() => setActiveCrmPromptTab('global')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'global' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`}>Insights Global</button>
+                                <button onClick={() => setActiveCrmPromptTab('card')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'card' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`}>Insights Lead</button>
+                                <button onClick={() => setActiveCrmPromptTab('desc')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'desc' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`} disabled>Descrição Imóvel (Abaixo)</button>
+                            </div>
 
-              {/* Lead Aging Config ... (No Change) ... */}
-              <Card className="p-6 border-l-4 border-l-blue-500">
-                  <div className="flex items-center justify-between mb-6">
-                      <div>
-                          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                              <Clock className="text-blue-600" size={20} />
-                              Configuração de Envelhecimento de Leads
-                          </h2>
-                          <p className="text-sm text-slate-500">Defina as cores e o tempo para o status visual dos leads no Kanban.</p>
-                      </div>
-                      <Button onClick={handleAgingSave} className="gap-2">
-                          <Save size={18} /> Salvar Regras
-                      </Button>
-                  </div>
+                            <div className="flex-1 p-4 flex flex-col">
+                                {activeCrmPromptTab === 'match' && (
+                                    <textarea 
+                                        className="flex-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:ring-2 focus:ring-primary-500/20 outline-none"
+                                        value={crmPrompts.matchAi}
+                                        onChange={e => setCrmPrompts({...crmPrompts, matchAi: e.target.value})}
+                                        placeholder="Prompt para análise de compatibilidade..."
+                                    />
+                                )}
+                                {activeCrmPromptTab === 'global' && (
+                                    <textarea 
+                                        className="flex-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:ring-2 focus:ring-primary-500/20 outline-none"
+                                        value={crmPrompts.crmGlobal}
+                                        onChange={e => setCrmPrompts({...crmPrompts, crmGlobal: e.target.value})}
+                                        placeholder="Prompt para análise global do pipeline..."
+                                    />
+                                )}
+                                {activeCrmPromptTab === 'card' && (
+                                    <textarea 
+                                        className="flex-1 w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono resize-none focus:ring-2 focus:ring-primary-500/20 outline-none"
+                                        value={crmPrompts.crmCard}
+                                        onChange={e => setCrmPrompts({...crmPrompts, crmCard: e.target.value})}
+                                        placeholder="Prompt para insights individuais do lead..."
+                                    />
+                                )}
+                            </div>
+                            <div className="p-4 border-t border-slate-100 flex justify-end">
+                                <Button onClick={handleCrmPromptsSave} size="sm">Salvar Prompts CRM</Button>
+                            </div>
+                        </Card>
+                    </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      {/* Fresh / Novo */}
-                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                              1. Fase Inicial (Novo)
-                          </h4>
-                          <div className="space-y-3">
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 uppercase">Até quantos dias?</label>
-                                  <Input 
-                                    type="number" 
-                                    value={agingConfig.freshLimit}
-                                    onChange={e => setAgingConfig({...agingConfig, freshLimit: Number(e.target.value)})}
-                                  />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 uppercase">Cor</label>
-                                  <select 
-                                    className="w-full px-2 py-2 rounded-lg border border-slate-200 text-sm"
-                                    value={agingConfig.freshColor}
-                                    onChange={e => setAgingConfig({...agingConfig, freshColor: e.target.value})}
-                                  >
-                                      {colorOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                  </select>
-                              </div>
-                              <div className={`mt-2 p-2 rounded text-center text-xs font-bold border ${getColorClass(agingConfig.freshColor)}`}>
-                                  Visualização
-                              </div>
-                          </div>
-                      </div>
+                    {/* Property Description Prompt */}
+                    <Card className="p-6">
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-lg font-bold text-slate-800">Prompt de Descrição de Imóveis</h3>
+                                <p className="text-sm text-slate-500">Variáveis disponíveis: {'{{title}}, {{type}}, {{price}}, {{address}}, {{features}}, {{area}}, {{bedrooms}}, {{bathrooms}}'}</p>
+                            </div>
+                            <Button onClick={handlePromptSave}>Salvar Prompt</Button>
+                        </div>
+                        <textarea 
+                            className="w-full h-64 p-4 bg-slate-900 text-slate-300 rounded-lg font-mono text-sm leading-relaxed"
+                            value={promptText}
+                            onChange={e => setPromptText(e.target.value)}
+                        />
+                    </Card>
+                </div>
+            )}
 
-                      {/* Warm / Morno */}
-                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                              2. Fase Intermediária (Morno)
-                          </h4>
-                          <div className="space-y-3">
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 uppercase">Até quantos dias?</label>
-                                  <Input 
-                                    type="number" 
-                                    value={agingConfig.warmLimit}
-                                    onChange={e => setAgingConfig({...agingConfig, warmLimit: Number(e.target.value)})}
-                                  />
-                              </div>
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 uppercase">Cor</label>
-                                  <select 
-                                    className="w-full px-2 py-2 rounded-lg border border-slate-200 text-sm"
-                                    value={agingConfig.warmColor}
-                                    onChange={e => setAgingConfig({...agingConfig, warmColor: e.target.value})}
-                                  >
-                                      {colorOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                  </select>
-                              </div>
-                              <div className={`mt-2 p-2 rounded text-center text-xs font-bold border ${getColorClass(agingConfig.warmColor)}`}>
-                                  Visualização
-                              </div>
-                          </div>
-                      </div>
+            {/* LOGS TAB */}
+            {activeTab === 'logs' && (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[600px]">
+                    <div className="lg:col-span-1 bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden">
+                        <div className="p-4 border-b border-slate-200">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-2.5 text-slate-400" size={18} />
+                                <input 
+                                    type="text" 
+                                    placeholder="Buscar logs..." 
+                                    className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                                    value={logSearch}
+                                    onChange={e => setLogSearch(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                            {filteredLogs.map(log => (
+                                <div 
+                                    key={log.id} 
+                                    onClick={() => setSelectedLog(log)}
+                                    className={`p-4 border-b border-slate-100 cursor-pointer transition-colors ${selectedLog?.id === log.id ? 'bg-primary-50 border-l-4 border-l-primary-500' : 'hover:bg-slate-50 border-l-4 border-l-transparent'}`}
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className="font-semibold text-slate-700 text-sm">{log.action.toUpperCase()}</span>
+                                        <span className="text-xs text-slate-400">{new Date(log.timestamp).toLocaleDateString()}</span>
+                                    </div>
+                                    <p className="text-xs text-slate-500 line-clamp-2">{log.details}</p>
+                                    <div className="flex items-center gap-2 mt-2">
+                                        <Badge color="gray" className="text-[10px]">{log.entity}</Badge>
+                                        <span className="text-[10px] text-slate-400">por {log.userName}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
 
-                      {/* Cold / Frio */}
-                      <div className="p-4 bg-slate-50 rounded-lg border border-slate-200">
-                          <h4 className="font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                              3. Fase Avançada (Frio)
-                          </h4>
-                          <div className="space-y-3">
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 uppercase">Tempo</label>
-                                  <div className="px-3 py-2 bg-slate-200 rounded text-slate-600 text-sm italic">
-                                      Acima de {agingConfig.warmLimit} dias
-                                  </div>
-                              </div>
-                              <div>
-                                  <label className="text-xs font-medium text-slate-500 uppercase">Cor</label>
-                                  <select 
-                                    className="w-full px-2 py-2 rounded-lg border border-slate-200 text-sm"
-                                    value={agingConfig.coldColor}
-                                    onChange={e => setAgingConfig({...agingConfig, coldColor: e.target.value})}
-                                  >
-                                      {colorOptions.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
-                                  </select>
-                              </div>
-                              <div className={`mt-2 p-2 rounded text-center text-xs font-bold border ${getColorClass(agingConfig.coldColor)}`}>
-                                  Visualização
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-              </Card>
+                    <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 flex flex-col overflow-hidden">
+                        {selectedLog ? (
+                            <div className="flex flex-col h-full">
+                                <div className="p-6 border-b border-slate-100 bg-slate-50">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h2 className="text-xl font-bold text-slate-800 mb-1">Detalhes da Atividade</h2>
+                                            <div className="flex items-center gap-2 text-sm text-slate-500">
+                                                <Clock size={14}/> {new Date(selectedLog.timestamp).toLocaleString()}
+                                                <span>•</span>
+                                                <UserPlus size={14}/> {selectedLog.userName}
+                                            </div>
+                                        </div>
+                                        {selectedLog.action === 'update' && selectedLog.previousData && (
+                                            <Button variant="outline" onClick={() => restoreState(selectedLog.id)} className="text-xs">
+                                                <RotateCcw size={14}/> Reverter Alteração
+                                            </Button>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="p-6 flex-1 overflow-y-auto space-y-6">
+                                    <div>
+                                        <h3 className="text-sm font-bold text-slate-700 uppercase mb-2">Descrição</h3>
+                                        <p className="text-slate-600 bg-slate-50 p-3 rounded-lg border border-slate-200">{selectedLog.details}</p>
+                                    </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <StringListManager 
-                      title="Origens de Lead (Sources)"
-                      description="Opções para o campo 'Origem' no cadastro de leads."
-                      items={systemSettings.leadSources}
-                      onAdd={addLeadSource}
-                      onRemove={removeLeadSource}
-                      placeholder="Nova origem (ex: Evento)"
-                  />
-                  
-                  <StringListManager 
-                      title="Localizações Sugeridas"
-                      description="Bairros ou cidades que aparecem no autocomplete."
-                      items={systemSettings.availableLocations}
-                      onAdd={addLocation}
-                      onRemove={removeLocation}
-                      placeholder="Cidade - Bairro (ex: SP - Moema)"
-                  />
-              </div>
-          </div>
-      )}
+                                    {(selectedLog.previousData || selectedLog.newData) && (
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-700 uppercase mb-2">Dados Técnicos (Diff)</h3>
+                                            <JsonDiffViewer before={selectedLog.previousData} after={selectedLog.newData} />
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full text-slate-400">
+                                <Shield size={48} className="mb-4 opacity-20" />
+                                <p>Selecione um log para ver os detalhes</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
 
-      {/* Logs Tab Content ... (No Change) ... */}
-      {activeTab === 'logs' && (
-          <Card className="flex flex-col h-[600px]">
-              <div className="p-4 border-b border-slate-100 flex flex-col md:flex-row justify-between items-center gap-4">
-                  <div>
-                      <h2 className="text-lg font-semibold text-slate-800">Histórico de Alterações</h2>
-                      <p className="text-sm text-slate-500">Rastreabilidade completa de ações no sistema.</p>
-                  </div>
-                  <div className="relative w-full md:w-64">
-                      <Search className="absolute left-3 top-2.5 text-slate-400" size={16} />
-                      <input 
-                        type="text" 
-                        placeholder="Buscar log..." 
-                        className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm"
-                        value={logSearch}
-                        onChange={(e) => setLogSearch(e.target.value)}
-                      />
-                  </div>
-              </div>
-              
-              <div className="flex-1 overflow-auto flex">
-                  {/* Log List */}
-                  <div className={`${selectedLog ? 'w-1/2' : 'w-full'} overflow-y-auto border-r border-slate-100 transition-all`}>
-                      <table className="w-full text-left text-sm text-slate-600">
-                          <thead className="bg-slate-50 text-slate-700 font-semibold uppercase text-xs sticky top-0 z-10 shadow-sm">
-                              <tr>
-                                  <th className="px-4 py-3">Data/Hora</th>
-                                  <th className="px-4 py-3">Usuário</th>
-                                  <th className="px-4 py-3">Ação</th>
-                                  <th className="px-4 py-3">Detalhes</th>
-                                  <th className="px-4 py-3"></th>
-                              </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                              {filteredLogs.map(log => (
-                                  <tr key={log.id} className={`hover:bg-slate-50 cursor-pointer ${selectedLog?.id === log.id ? 'bg-blue-50' : ''}`} onClick={() => setSelectedLog(log)}>
-                                      <td className="px-4 py-3 text-xs whitespace-nowrap">
-                                          {new Date(log.timestamp).toLocaleString()}
-                                      </td>
-                                      <td className="px-4 py-3 font-medium text-slate-800">{log.userName}</td>
-                                      <td className="px-4 py-3">{getActionBadge(log.action)}</td>
-                                      <td className="px-4 py-3">
-                                          <div className="font-medium text-slate-700">{log.entityName}</div>
-                                          <div className="text-xs text-slate-400">{log.details}</div>
-                                      </td>
-                                      <td className="px-4 py-3 text-right">
-                                          <Eye size={16} className="text-slate-400" />
-                                      </td>
-                                  </tr>
-                              ))}
-                              {filteredLogs.length === 0 && (
-                                  <tr><td colSpan={5} className="text-center py-8 text-slate-400">Nenhum registro encontrado.</td></tr>
-                              )}
-                          </tbody>
-                      </table>
-                  </div>
+        {/* MODALS */}
+        {/* ADD USER MODAL */}
+        {isAddUserOpen && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <h2 className="text-xl font-bold text-slate-800 mb-4">Adicionar Usuário</h2>
+                    <div className="space-y-4">
+                        <Input label="Nome" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} />
+                        <Input label="Email" type="email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} />
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 mb-1 block">Função</label>
+                            <select 
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                value={newUser.role}
+                                onChange={e => setNewUser({...newUser, role: e.target.value as UserRole})}
+                            >
+                                <option value="admin">Administrador</option>
+                                <option value="finance">Financeiro</option>
+                                <option value="employee">Funcionário</option>
+                                <option value="broker">Corretor</option>
+                                <option value="captator">Captador (Externo)</option>
+                            </select>
+                        </div>
+                        <div className="p-3 bg-blue-50 text-blue-700 text-xs rounded-lg">
+                            Senha padrão inicial: <strong>123456</strong>
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-6">
+                        <Button variant="outline" onClick={() => setIsAddUserOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleAddUser}>Cadastrar</Button>
+                    </div>
+                </div>
+            </div>
+        )}
 
-                  {/* Log Detail Panel */}
-                  {selectedLog && (
-                      <div className="w-1/2 bg-slate-50 p-6 overflow-y-auto flex flex-col h-full animate-in slide-in-from-right duration-200">
-                          <div className="flex justify-between items-start mb-6">
-                              <div>
-                                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                      {getActionBadge(selectedLog.action)} 
-                                      <span className="truncate">{selectedLog.entityName}</span>
-                                  </h3>
-                                  <p className="text-sm text-slate-500">ID: {selectedLog.entityId}</p>
-                              </div>
-                              <button onClick={() => setSelectedLog(null)} className="text-slate-400 hover:text-slate-600"><Settings size={20} className="opacity-0" /></button> {/* Spacer */}
-                          </div>
-
-                          <div className="space-y-4 flex-1">
-                              <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm">
-                                  <h4 className="text-xs font-semibold text-slate-500 uppercase mb-2">Dados da Alteração</h4>
-                                  <JsonDiffViewer before={selectedLog.previousData} after={selectedLog.newData} />
-                              </div>
-                          </div>
-
-                          <div className="mt-6 pt-6 border-t border-slate-200">
-                              <div className="flex items-center justify-between">
-                                  <div className="text-xs text-slate-400">
-                                      Responsável: <strong>{selectedLog.userName}</strong>
-                                  </div>
-                                  {selectedLog.previousData && selectedLog.action !== 'create' && (
-                                      <Button 
-                                        variant="outline" 
-                                        className="text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300"
-                                        onClick={() => { if(window.confirm('Isso reverterá os dados para o estado ANTERIOR a esta mudança. Uma nova entrada de log será criada. Confirmar?')) restoreState(selectedLog.id) }}
-                                      >
-                                          <RotateCcw size={16} /> Restaurar Versão Anterior
-                                      </Button>
-                                  )}
-                              </div>
-                          </div>
-                      </div>
-                  )}
-              </div>
-          </Card>
-      )}
+        {/* EDIT USER MODAL */}
+        {isEditUserOpen && editingUser && (
+            <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+                    <h2 className="text-xl font-bold text-slate-800 mb-4">Editar Usuário</h2>
+                    <div className="space-y-4">
+                        <Input label="Nome" value={editingUser.name} onChange={e => setEditingUser({...editingUser, name: e.target.value})} />
+                        <Input label="Email" type="email" value={editingUser.email} onChange={e => setEditingUser({...editingUser, email: e.target.value})} />
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 mb-1 block">Função</label>
+                            <select 
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                value={editingUser.role}
+                                onChange={e => setEditingUser({...editingUser, role: e.target.value as UserRole})}
+                            >
+                                <option value="admin">Administrador</option>
+                                <option value="finance">Financeiro</option>
+                                <option value="employee">Funcionário</option>
+                                <option value="broker">Corretor</option>
+                                <option value="captator">Captador (Externo)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label className="text-sm font-medium text-slate-700 mb-1 block">Redefinir Senha (Opcional)</label>
+                            <Input 
+                                type="password" 
+                                placeholder="Nova senha..." 
+                                value={editPassword}
+                                onChange={e => setEditPassword(e.target.value)}
+                            />
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-6">
+                        <Button variant="outline" onClick={() => setIsEditUserOpen(false)}>Cancelar</Button>
+                        <Button onClick={handleSaveUserEdit}>Salvar Alterações</Button>
+                    </div>
+                </div>
+            </div>
+        )}
     </div>
   );
 };

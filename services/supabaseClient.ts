@@ -34,10 +34,9 @@ export const getSupabase = (url: string, key: string) => {
         },
         realtime: {
             params: {
-                eventsPerSecond: 20,
+                eventsPerSecond: 10,
             },
-            // Critical for keeping connection alive in some network conditions
-            heartbeatIntervalMs: 15000, 
+            heartbeatIntervalMs: 5000, // Faster heartbeat to detect disconnects
         },
     });
     
@@ -52,6 +51,13 @@ export const syncEntityToSupabase = async (table: string, data: any, url: string
     // Ensure data is pure JSON
     const cleanContent = JSON.parse(JSON.stringify(data));
 
+    // Try to determine if we should use 'content' column or flat columns
+    // For simplicity in this hybrid approach, we prefer 'content' but if the table is strict relational, this might fail unless we adjust.
+    // However, the prompt implies we are using a flexible schema or the user has adapted it.
+    // To be safe, we will upsert into 'content' if possible, assuming the schema supports it as per previous design.
+    // If the user is using a strict schema, this part of the code might need a different strategy (mapping fields), 
+    // but typically with "content" pattern, we just dump JSON.
+    
     const payload = {
         id: data.id,
         content: cleanContent,
@@ -95,11 +101,22 @@ export const fetchEntitiesFromSupabase = async (table: string, url: string, key:
         }
 
         const entities = data.map((row: any) => {
-            // Handle potential stringified JSON if column type varies
-            if (typeof row.content === 'string') {
-                try { return JSON.parse(row.content); } catch (e) { return row.content; }
+            // 1. Try 'content' column (Document Store Pattern)
+            if (row.content) {
+                if (typeof row.content === 'string') {
+                    try { return JSON.parse(row.content); } catch (e) { return row.content; }
+                }
+                return row.content;
             }
-            return row.content;
+            
+            // 2. Fallback: Normalize flat row (Relational Table Pattern)
+            // Convert snake_case to camelCase
+            const newObj: any = {};
+            for (const key in row) {
+                const camelKey = key.replace(/_([a-z])/g, (g) => g[1].toUpperCase());
+                newObj[camelKey] = row[key];
+            }
+            return newObj;
         });
         
         return { data: entities, error: null };
@@ -113,39 +130,34 @@ export const fetchEntitiesFromSupabase = async (table: string, url: string, key:
 export const unsubscribeAll = async () => {
     const promises: Promise<any>[] = [];
     activeChannels.forEach((channel) => {
-        if(channel.state === 'joined' || channel.state === 'joining') {
-            promises.push(channel.unsubscribe());
-        }
+        promises.push(channel.unsubscribe());
     });
     await Promise.all(promises);
     activeChannels.clear();
-    console.log("[Realtime] Canais desconectados (Cleanup).");
+    console.log("[Realtime] Todos canais fechados.");
 };
 
 // GLOBAL DATABASE SUBSCRIPTION
 export const subscribeToDatabase = (
     url: string,
     key: string,
-    onEvent: (payload: any) => void
+    onEvent: (payload: any) => void,
+    onStatusChange?: (status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING') => void
 ): RealtimeChannel | null => {
     const supabase = getSupabase(url, key);
     if (!supabase) return null;
 
     const channelName = 'public-db-changes';
 
-    // Strict Deduplication
+    // FORCE CLEANUP: Always remove old channel to ensure fresh connection logic
     if (activeChannels.has(channelName)) {
-        const existing = activeChannels.get(channelName);
-        if (existing && (existing.state === 'joined' || existing.state === 'joining')) {
-            console.log("[Realtime] Canal já ativo, reutilizando.");
-            return existing;
-        }
-        // If state is closed/errored, remove it to start fresh
-        try { existing?.unsubscribe(); } catch(e){}
+        const oldChannel = activeChannels.get(channelName);
+        oldChannel?.unsubscribe();
         activeChannels.delete(channelName);
     }
 
-    console.log("[Realtime] Iniciando conexão com canal global...");
+    if(onStatusChange) onStatusChange('CONNECTING');
+    console.log("[Realtime] Iniciando nova conexão...");
 
     const channel = supabase.channel(channelName)
         .on(
@@ -155,25 +167,15 @@ export const subscribeToDatabase = (
         )
         .subscribe((status, err) => {
             if (status === 'SUBSCRIBED') {
-                console.log(`[Realtime] Conectado e monitorando banco de dados.`);
+                console.log(`[Realtime] Conectado!`);
+                if(onStatusChange) onStatusChange('CONNECTED');
             }
             
-            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                console.warn(`[Realtime] Erro de conexão (${status}):`, err);
+            if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                console.warn(`[Realtime] Desconectado (${status})`);
+                if(onStatusChange) onStatusChange('DISCONNECTED');
                 
-                // Cleanup bad channel
-                activeChannels.delete(channelName);
-                
-                // Auto-retry logic handled by client usually, but if channel dies completely:
-                // We can attempt a hard reconnect after delay
-                setTimeout(() => {
-                    console.log("[Realtime] Tentando reconexão automática...");
-                    subscribeToDatabase(url, key, onEvent);
-                }, 5000);
-            }
-            
-            if (status === 'CLOSED') {
-                console.log(`[Realtime] Canal fechado.`);
+                // Remove from active list
                 activeChannels.delete(channelName);
             }
         });
