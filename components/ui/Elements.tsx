@@ -83,7 +83,7 @@ export const PhoneInput = ({
     );
 };
 
-export const Badge: React.FC<{ children?: React.ReactNode, color?: 'blue' | 'green' | 'yellow' | 'red' | 'gray' }> = ({ children, color = 'blue' }) => {
+export const Badge: React.FC<{ children?: React.ReactNode, color?: 'blue' | 'green' | 'yellow' | 'red' | 'gray', className?: string }> = ({ children, color = 'blue', className = "" }) => {
     const colors = {
         blue: 'bg-blue-50 text-blue-700 border-blue-100',
         green: 'bg-green-50 text-green-700 border-green-100',
@@ -92,7 +92,7 @@ export const Badge: React.FC<{ children?: React.ReactNode, color?: 'blue' | 'gre
         gray: 'bg-slate-50 text-slate-600 border-slate-100',
     }
     return (
-        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${colors[color]}`}>
+        <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold border ${colors[color]} ${className}`}>
             {children}
         </span>
     )

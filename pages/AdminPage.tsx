@@ -170,11 +170,8 @@ export const AdminPage: React.FC = () => {
           return;
       }
       setIsTestingSmtp(true);
-      const success = await sendTestEmail({
-          to: testEmail, 
-          subject: 'Teste de SMTP - WebImob',
-          body: 'Se você recebeu este email, sua configuração SMTP está correta.'
-      }, settingsForm.smtpConfig);
+      // Corrected call signature: pass email string directly
+      const success = await sendTestEmail(testEmail, settingsForm.smtpConfig);
       setIsTestingSmtp(false);
       
       if(success) {
@@ -480,7 +477,7 @@ export const AdminPage: React.FC = () => {
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm font-medium text-slate-700">Habilitar Envio de Emails</span>
                                 <input 
-                                    type="checkbox"
+                                    type="checkbox" 
                                     className="w-5 h-5"
                                     checked={settingsForm.smtpConfig?.enabled || false}
                                     onChange={e => updateSmtp({ enabled: e.target.checked })}
@@ -599,7 +596,7 @@ export const AdminPage: React.FC = () => {
                                 <button onClick={() => setActiveCrmPromptTab('match')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'match' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`}>Matchmaking</button>
                                 <button onClick={() => setActiveCrmPromptTab('global')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'global' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`}>Insights Global</button>
                                 <button onClick={() => setActiveCrmPromptTab('card')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'card' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`}>Insights Lead</button>
-                                <button onClick={() => setActiveCrmPromptTab('desc')} className={`px-4 py-2 text-xs font-bold uppercase transition-colors ${activeCrmPromptTab === 'desc' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-slate-500'}`} disabled>Descrição Imóvel (Abaixo)</button>
+                                <button className={`px-4 py-2 text-xs font-bold uppercase transition-colors text-slate-500 cursor-not-allowed border-b-2 border-transparent`} disabled>Descrição Imóvel (Abaixo)</button>
                             </div>
 
                             <div className="flex-1 p-4 flex flex-col">
@@ -629,7 +626,7 @@ export const AdminPage: React.FC = () => {
                                 )}
                             </div>
                             <div className="p-4 border-t border-slate-100 flex justify-end">
-                                <Button onClick={handleCrmPromptsSave} size="sm">Salvar Prompts CRM</Button>
+                                <Button onClick={handleCrmPromptsSave} className="text-xs py-1 px-3">Salvar Prompts CRM</Button>
                             </div>
                         </Card>
                     </div>
